@@ -1,0 +1,10 @@
+{
+  "$schema": "https://pages.edgeone.ai/schema.json",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "devCommand": "npx vite --host 0.0.0.0 --port",
+  "installCommand": "npm ci",
+  "nodeVersion": "22.17.1",
+  "mainlandRegions": ["ap-shanghai"],
+  "overseasRegions": ["ap-hongkong"]
+}

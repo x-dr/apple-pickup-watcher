@@ -1,0 +1,36 @@
+================================================================================
+NOTICE — 来源、版权与修改声明
+================================================================================
+
+本项目 apple-pickup-watcher-web 是下述项目的 Web 派生实现：
+
+    上游项目    ENCHIGO/apple-pickup-watcher
+    上游地址    https://github.com/ENCHIGO/apple-pickup-watcher
+    上游许可    GNU General Public License, version 3 or later
+
+上游项目本身派生自：
+
+    原项目      Apple Store 预约助手 (hteen/apple-store-helper)
+    原项目地址  https://github.com/hteen/apple-store-helper
+    原项目作者  Hteen 与 apple-store-helper contributors
+    原项目许可  GNU General Public License, version 3
+
+版权声明：
+
+    Copyright (C) 2020-2025 Hteen and the apple-store-helper contributors
+    Copyright (C) 2026 the apple-pickup-watcher contributors
+    Copyright (C) 2026 the apple-pickup-watcher-web contributors
+
+修改声明（GPL-3.0 第 5 条 a 款）
+---------------------------------
+
+    2026-09-15  将 Rust + Tauri 桌面应用重新实现为 Node.js/TypeScript、React 与
+                Ant Design 的 Web 应用；增加 EdgeOne Makers 云函数适配、Bearer
+                访问口令、浏览器端设置存储、响应式布局及服务端 Bark 配置；保留
+                上游的三态库存语义、Apple 接口、地区范围和目录数据。
+
+本项目内 `public/catalog/*.json` 是从上游 `crates/apw-core/data/` 的门店与商品
+快照转换得到的派生数据，继续适用 GPL-3.0。转换程序位于
+`scripts/import-upstream-catalog.mjs`。
+
+本项目整体按 GNU General Public License version 3 授权。许可全文见 LICENSE。

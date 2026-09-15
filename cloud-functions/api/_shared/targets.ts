@@ -4,12 +4,6 @@ import { knownLocale, type QueryTarget } from "./apple";
 const partPattern = /^[A-Z0-9]+\/[A-Z0-9]+$/;
 const storePattern = /^R[0-9]{3,4}$/;
 
-export interface LegacyTarget extends QueryTarget {
-  storeTitle: string;
-  productName: string;
-  productUrl: string;
-}
-
 function text(value: unknown, name: string, max: number): string {
   if (typeof value !== "string" || !value.trim() || value.length > max) {
     throw new RequestError(400, "invalid_target", `${name} 不合法`);
@@ -35,43 +29,6 @@ function assertUniqueTargets(targets: QueryTarget[]): void {
   if (uniqueKeys.size !== targets.length) {
     throw new RequestError(400, "duplicate_targets", "监控目标中存在重复项");
   }
-}
-
-/** Validate the legacy request while preserving its response metadata during migration. */
-export function validateTargets(value: unknown): LegacyTarget[] {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 24) {
-    throw new RequestError(400, "invalid_targets", "监控目标数量须为 1 到 24 项");
-  }
-  const targets = value.map((raw): LegacyTarget => {
-    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-      throw new RequestError(400, "invalid_target", "监控目标格式不正确");
-    }
-    const item = raw as Record<string, unknown>;
-    const target = queryTarget(item);
-    const productUrl = text(item.productUrl, "productUrl", 300);
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(productUrl);
-    } catch {
-      throw new RequestError(400, "invalid_target", "商品地址不合法");
-    }
-    const appleHost = parsedUrl.hostname === "apple.com" || parsedUrl.hostname.endsWith(".apple.com") || parsedUrl.hostname === "apple.com.cn" || parsedUrl.hostname.endsWith(".apple.com.cn");
-    if (parsedUrl.protocol !== "https:" || !appleHost) {
-      throw new RequestError(400, "invalid_target", "商品地址必须是 Apple HTTPS 地址");
-    }
-    return {
-      ...target,
-      storeTitle: text(item.storeTitle, "storeTitle", 120),
-      productName: text(item.productName, "productName", 240),
-      productUrl: parsedUrl.toString(),
-    };
-  });
-  assertUniqueTargets(targets);
-  const groups = new Set(targets.map((item) => `${item.locale}|${item.storeNumber}`));
-  if (groups.size > 6) {
-    throw new RequestError(400, "too_many_stores", "一次最多查询 6 家不同门店");
-  }
-  return targets;
 }
 
 export function validateGroups(value: unknown): QueryTarget[] {

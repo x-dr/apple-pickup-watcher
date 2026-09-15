@@ -8,7 +8,7 @@ import {
   type MakersContext,
 } from "./_shared/context";
 import { retryAfter } from "./_shared/rate-limit";
-import { validateGroups, validateTargets, type LegacyTarget } from "./_shared/targets";
+import { validateGroups } from "./_shared/targets";
 
 type AppleCheckResult = Awaited<ReturnType<typeof checkAppleTargets>>;
 type ResultAvailability = AppleCheckResult["rows"][number]["availability"];
@@ -16,34 +16,6 @@ interface ResultGroup {
   locale: string;
   storeNumber: string;
   items: Array<{ partNumber: string; availability: ResultAvailability }>;
-}
-
-function keyOf(target: { locale: string; storeNumber: string; partNumber: string }): string {
-  return `${target.locale}|${target.storeNumber}|${target.partNumber}`;
-}
-
-function v1Response(
-  result: AppleCheckResult,
-  targets: LegacyTarget[],
-  previousFailures: Record<string, number>,
-) {
-  const metadata = new Map(targets.map((target) => [keyOf(target), target]));
-  return {
-    ...result,
-    rows: result.rows.map((row) => {
-      const target = metadata.get(keyOf(row))!;
-      const previous = previousFailures[keyOf(row)];
-      const previousCount = typeof previous === "number" && Number.isFinite(previous) ? previous : 0;
-      return {
-        target,
-        availability: row.availability,
-        lastCheckedMs: result.checkedAt,
-        consecutiveFailures: row.availability.kind === "unknown"
-          ? Math.min(10_000, Math.max(0, previousCount)) + 1
-          : 0,
-      };
-    }),
-  };
 }
 
 function v2Response(result: AppleCheckResult) {
@@ -83,23 +55,11 @@ export async function onRequestPost(context: MakersContext): Promise<Response> {
       throw new RequestError(400, "invalid_request", "请求格式不正确");
     }
     const input = body as Record<string, unknown>;
-    if (Object.hasOwn(input, "version")) {
-      if (input.version !== 2) {
-        throw new RequestError(400, "unsupported_version", "不支持的库存查询协议版本");
-      }
-      const targets = validateGroups(input.groups);
-      return json(v2Response(await checkAppleTargets(targets, fetch, context.request.signal)));
+    if (input.version !== 2) {
+      throw new RequestError(400, "unsupported_version", "库存查询接口仅支持 v2 协议");
     }
-    const targets = validateTargets(input.targets);
-    const previousFailures =
-      typeof input.previousFailures === "object" && input.previousFailures !== null
-        ? (input.previousFailures as Record<string, number>)
-        : {};
-    return json(v1Response(
-      await checkAppleTargets(targets, fetch, context.request.signal),
-      targets,
-      previousFailures,
-    ));
+    const targets = validateGroups(input.groups);
+    return json(v2Response(await checkAppleTargets(targets, fetch, context.request.signal)));
   } catch (error) {
     return errorResponse(error);
   }

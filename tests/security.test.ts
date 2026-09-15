@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { authorize } from "../cloud-functions/api/_shared/auth";
-import { validateTargets } from "../cloud-functions/api/_shared/targets";
+import { validateGroups } from "../cloud-functions/api/_shared/targets";
 
 function context(token?: string, expected = "correct-horse-battery") {
   return {
@@ -24,14 +24,20 @@ describe("云函数边界", () => {
     expect(result?.status).toBe(503);
   });
 
-  it("拒绝非 Apple 商品链接", () => {
-    expect(() => validateTargets([{
+  it("v2 查询边界只保留查询所需字段", () => {
+    expect(validateGroups([{
       locale: "zh_CN",
       storeNumber: "R683",
-      storeTitle: "上海-环球港",
+      items: [{
+        partNumber: "mjtf4ch/a",
+        storeTitle: "上海-环球港",
+        productName: "iPhone",
+        productUrl: "https://example.com/not-sent-upstream",
+      }],
+    }])).toEqual([{
+      locale: "zh_CN",
+      storeNumber: "R683",
       partNumber: "MJTF4CH/A",
-      productName: "iPhone",
-      productUrl: "https://example.com/not-apple",
-    }])).toThrow("Apple HTTPS");
+    }]);
   });
 });

@@ -68,31 +68,22 @@ describe("/api/check v2", () => {
     expect(String(fetchMock.mock.calls[1]![0])).toContain("parts.1=BBB%2FA");
   });
 
-  it("迁移期间继续为 v1 请求返回完整 v1 响应", async () => {
-    const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response("bag"))
-      .mockResolvedValueOnce(inventory({ "AAA/A": "maybe" }));
+  it("拒绝缺少 v2 版本号的旧协议请求", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
     const { onRequestPost } = await import("../cloud-functions/api/check");
-    const target = {
-      locale: "zh_CN",
-      storeNumber: "R683",
-      storeTitle: "上海-环球港",
-      partNumber: "AAA/A",
-      productName: "iPhone",
-      productUrl: "https://www.apple.com.cn/shop/product/AAA/A",
-    };
 
     const response = await onRequestPost(context({
-      targets: [target],
-      previousFailures: { "zh_CN|R683|AAA/A": 4 },
+      targets: [{ locale: "zh_CN", storeNumber: "R683", partNumber: "AAA/A" }],
     }));
     const body = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(body).not.toHaveProperty("version");
-    expect(body.rows[0]).toMatchObject({ target, consecutiveFailures: 5 });
-    expect(body.rows[0].lastCheckedMs).toBe(body.checkedAt);
+    expect(response.status).toBe(400);
+    expect(body).toMatchObject({
+      error: "unsupported_version",
+      message: "库存查询接口仅支持 v2 协议",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("拒绝未知协议版本和 Apple Watch 组合字段", async () => {

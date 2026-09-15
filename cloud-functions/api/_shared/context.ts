@@ -1,8 +1,19 @@
+export interface MakersRequest extends Request {
+  readonly eo?: {
+    readonly clientIp?: string;
+  };
+}
+
 export interface MakersContext {
-  request: Request;
+  request: MakersRequest;
   env: Record<string, string | undefined>;
   clientIp?: string;
   uuid?: string;
+}
+
+export function requestClientIp(context: MakersContext): string | null {
+  const value = context.clientIp?.trim() || context.request.eo?.clientIp?.trim();
+  return value || null;
 }
 
 export function json(data: unknown, status = 200, headers?: HeadersInit): Response {

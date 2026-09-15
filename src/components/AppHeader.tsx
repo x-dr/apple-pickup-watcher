@@ -1,5 +1,6 @@
 import {
   ApiOutlined,
+  GlobalOutlined,
   KeyOutlined,
   MoonOutlined,
   PauseCircleOutlined,
@@ -17,6 +18,7 @@ interface Props {
   onToggleTheme(): void;
   onToggleRunning(): void;
   onOpenAuth(): void;
+  onOpenNetwork(): void;
 }
 
 export function AppHeader({
@@ -28,6 +30,7 @@ export function AppHeader({
   onToggleTheme,
   onToggleRunning,
   onOpenAuth,
+  onOpenNetwork,
 }: Props) {
   return (
     <header className="app-header">
@@ -48,6 +51,13 @@ export function AppHeader({
             aria-label="配置访问口令"
             icon={<KeyOutlined />}
             onClick={onOpenAuth}
+          />
+        </Tooltip>
+        <Tooltip title="查看客户与函数出口 IP">
+          <Button
+            aria-label="查看网络 IP"
+            icon={<GlobalOutlined />}
+            onClick={onOpenNetwork}
           />
         </Tooltip>
         <Tooltip title={dark ? "切换浅色" : "切换深色"}>

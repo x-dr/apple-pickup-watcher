@@ -118,6 +118,40 @@ export interface HealthResponse {
   runtime: string;
 }
 
+export interface RuntimeIpInfo {
+  status: "success";
+  message: string | null;
+  continent: string;
+  continentCode: string;
+  country: string;
+  countryCode: string;
+  region: string;
+  regionName: string;
+  city: string;
+  district: string;
+  zip: string;
+  lat: number;
+  lon: number;
+  timezone: string;
+  offset: number;
+  currency: string;
+  isp: string;
+  org: string;
+  as: string;
+  asname: string;
+  reverse: string;
+  mobile: boolean;
+  proxy: boolean;
+  hosting: boolean;
+  query: string;
+}
+
+export interface NetworkInfoResponse {
+  clientIp: string | null;
+  runtimeIp: RuntimeIpInfo;
+  checkedAt: number;
+}
+
 export const REGIONS: Region[] = [
   { title: "中国大陆", locale: "zh_CN", baseUrl: "https://www.apple.com.cn" },
   { title: "中国香港", locale: "zh_HK", baseUrl: "https://www.apple.com/hk-zh" },

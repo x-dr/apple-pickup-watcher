@@ -11,11 +11,13 @@ import { TargetList } from "@/components/TargetList";
 import { useWatcher } from "@/hooks/useWatcher";
 
 const AccessTokenModal = lazy(() => import("@/components/AccessTokenModal").then((module) => ({ default: module.AccessTokenModal })));
+const NetworkInfoModal = lazy(() => import("@/components/NetworkInfoModal").then((module) => ({ default: module.NetworkInfoModal })));
 
 function Dashboard() {
   const watcher = useWatcher();
   const canCheck = watcher.rows.length > 0 && Boolean(watcher.health && !watcher.healthError && (watcher.accessToken || !watcher.health.authConfigured));
   const [dark, setDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const [networkOpen, setNetworkOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
@@ -59,6 +61,7 @@ function Dashboard() {
             onToggleTheme={() => setDark((value) => !value)}
             onToggleRunning={() => watcher.setRunning(!watcher.running)}
             onOpenAuth={() => watcher.setAuthOpen(true)}
+            onOpenNetwork={() => setNetworkOpen(true)}
           />
 
           {watcher.health && !watcher.health.authConfigured && (
@@ -137,6 +140,13 @@ function Dashboard() {
           onCancel={() => watcher.setAuthOpen(false)}
           onSubmit={watcher.submitAccessToken}
         />}
+        </Suspense>
+        <Suspense fallback={<span role="status">正在打开网络信息…</span>}>
+          {networkOpen && <NetworkInfoModal
+            open={networkOpen}
+            accessToken={watcher.accessToken}
+            onCancel={() => setNetworkOpen(false)}
+          />}
         </Suspense>
       </AntApp>
     </ConfigProvider>

@@ -6,6 +6,8 @@ import {
   type CheckResponse,
   type CheckResponseV2,
   type HealthResponse,
+  type NetworkInfoResponse,
+  type RuntimeIpInfo,
   type Target,
   type TargetState,
 } from "@/domain/types";
@@ -66,6 +68,33 @@ export async function fetchHealth(signal?: AbortSignal): Promise<HealthResponse>
 export async function verifyAccessToken(token: string): Promise<{ ok: true }> {
   const value = await requestJson<{ ok: true }>("/api/verify", token, { cache: "no-store" });
   if (value.ok !== true) throw new ApiError(502, "invalid_response", "口令验证响应不正确");
+  return value;
+}
+
+function isRuntimeIpInfo(value: unknown): value is RuntimeIpInfo {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const input = value as Record<string, unknown>;
+  const strings = [
+    "continent", "continentCode", "country", "countryCode", "region", "regionName",
+    "city", "district", "zip", "timezone", "currency", "isp", "org", "as", "asname",
+    "reverse", "query",
+  ];
+  const numbers = ["lat", "lon", "offset"];
+  const booleans = ["mobile", "proxy", "hosting"];
+  return input.status === "success" &&
+    (input.message === null || typeof input.message === "string") &&
+    strings.every((field) => typeof input[field] === "string") &&
+    numbers.every((field) => typeof input[field] === "number" && Number.isFinite(input[field])) &&
+    booleans.every((field) => typeof input[field] === "boolean");
+}
+
+export async function fetchNetworkInfo(token: string, signal?: AbortSignal): Promise<NetworkInfoResponse> {
+  const value = await requestJson<NetworkInfoResponse>("/api/ip", token, { cache: "no-store", signal }, 10_000);
+  if ((value.clientIp !== null && typeof value.clientIp !== "string") ||
+    !isRuntimeIpInfo(value.runtimeIp) ||
+    !Number.isFinite(value.checkedAt)) {
+    throw new ApiError(502, "invalid_response", "网络 IP 响应不正确");
+  }
   return value;
 }
 

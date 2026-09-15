@@ -102,6 +102,8 @@ export const CATEGORY_OPTIONS: Array<{ value: Category; label: string }> = [
   { value: "watch", label: "Apple Watch" },
 ];
 
+export const QUERY_INTERVAL_OPTIONS = [5, 10, 15, 30, 60] as const;
+
 export const PENDING_AVAILABILITY: Availability = {
   kind: "unknown",
   reason: "not_yet_checked",

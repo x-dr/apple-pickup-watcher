@@ -1,4 +1,4 @@
-import { PlusOutlined } from "@ant-design/icons";
+import { DownOutlined, PlusOutlined, UpOutlined } from "@ant-design/icons";
 import { Button, Select, Skeleton } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
@@ -46,6 +46,7 @@ function buildTarget(locale: string, store: Store, product: Product): Target {
 }
 
 export function TargetBuilder({ locale, catalog, loading, rows, onLocaleChange, onAdd, onAddMany }: Props) {
+  const [expanded, setExpanded] = useState(true);
   const [category, setCategory] = useState<Category>("iphone");
   const [storeNumber, setStoreNumber] = useState<string>();
   const [partNumber, setPartNumber] = useState<string>();
@@ -127,15 +128,28 @@ export function TargetBuilder({ locale, catalog, loading, rows, onLocaleChange, 
   };
 
   return (
-    <section className="panel target-builder">
-      <div className="section-heading">
+    <section className={`panel target-builder${expanded ? "" : " is-collapsed"}`}>
+      <div className="section-heading target-builder-heading">
         <div><span className="eyebrow">STEP 01</span><h2>添加监控目标</h2></div>
-        <span className="section-note">最多 24 项 / 6 家门店</span>
+        <div className="target-builder-heading-actions">
+          <span className="section-note">最多 24 项 / 6 家门店</span>
+          <Button
+            type="text"
+            size="small"
+            icon={expanded ? <UpOutlined /> : <DownOutlined />}
+            aria-expanded={expanded}
+            aria-controls="target-builder-content"
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? "收起" : "展开"}
+          </Button>
+        </div>
       </div>
-      {loading ? (
-        <Skeleton active paragraph={{ rows: 2 }} />
-      ) : (
-        <div className="builder-grid">
+      <div id="target-builder-content" hidden={!expanded}>
+        {loading ? (
+          <Skeleton active paragraph={{ rows: 2 }} />
+        ) : (
+          <div className="builder-grid">
           <label className="field"><span>地区</span>
             <Select
               value={locale}
@@ -237,8 +251,9 @@ export function TargetBuilder({ locale, catalog, loading, rows, onLocaleChange, 
               {duplicate ? "已添加" : wouldExceedStores ? "门店已达上限" : "添加目标"}
             </Button>
           )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

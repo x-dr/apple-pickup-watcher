@@ -31,9 +31,14 @@ describe("缓存和存储恢复", () => {
     saved.set("apw:web:settings:v1", value); expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
   });
 
+  it.each([5, 10, 15, 30, 60])("保留可选的 %d 秒查询间隔", (intervalSeconds) => {
+    saved.set("apw:web:settings:v1", JSON.stringify({ intervalSeconds }));
+    expect(loadSettings().intervalSeconds).toBe(intervalSeconds);
+  });
+
   it("清理无效字段、重复目标和过多门店，保留有效数据", () => {
     saved.set("apw:web:settings:v1", JSON.stringify({ locale: "invalid", intervalSeconds: 1, barkEnabled: "true" }));
-    expect(loadSettings()).toMatchObject({ locale: "zh_CN", intervalSeconds: 30, barkEnabled: false });
+    expect(loadSettings()).toMatchObject({ locale: "zh_CN", intervalSeconds: 60, barkEnabled: false });
     saved.set("apw:web:targets:v1", JSON.stringify([{}, null, target, target, ...Array.from({ length: 8 }, (_, index) => ({ ...target, storeNumber: `R10${index}` }))]));
     expect(loadTargetStates()).toHaveLength(6);
     expect(loadTargetStates()[0]?.target).toEqual(target);

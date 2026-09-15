@@ -131,6 +131,17 @@ describe("监控状态与通知", () => {
     expect(checkTargets).toHaveBeenCalledTimes(2);
   });
 
+  it("支持每 5 秒自动查询", async () => {
+    vi.useFakeTimers(); await add();
+    await act(async () => model.updateSettings({ intervalSeconds: 5 }));
+    await act(async () => model.setRunning(true));
+    expect(model.nextCheckAt).toBe(Date.now() + 5_000);
+    await act(async () => vi.advanceTimersByTimeAsync(4_999));
+    expect(checkTargets).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(checkTargets).toHaveBeenCalledTimes(2);
+  });
+
   it("遵守 Retry-After，手动查询不能越过冷却时间", async () => {
     vi.useFakeTimers(); await add();
     vi.mocked(checkTargets).mockRejectedValueOnce(new ApiError(429, "too_many_requests", "稍后重试", 300));

@@ -1,4 +1,4 @@
-import { PENDING_AVAILABILITY, REGIONS, productUrl, targetKey, type Settings, type Target, type TargetState } from "@/domain/types";
+import { PENDING_AVAILABILITY, QUERY_INTERVAL_OPTIONS, REGIONS, productUrl, targetKey, type Settings, type Target, type TargetState } from "@/domain/types";
 
 const SETTINGS_KEY = "apw:web:settings:v1";
 const TARGETS_KEY = "apw:web:targets:v1";
@@ -19,7 +19,9 @@ export function normalizeSettings(value: unknown): Settings {
   const seconds = saved.intervalSeconds;
   const result = { ...DEFAULT_SETTINGS };
   if (REGIONS.some((region) => region.locale === saved.locale)) result.locale = saved.locale as string;
-  if (typeof seconds === "number" && Number.isFinite(seconds)) result.intervalSeconds = Math.max(30, Math.min(3600, Math.round(seconds)));
+  if (typeof seconds === "number" && QUERY_INTERVAL_OPTIONS.some((option) => option === seconds)) {
+    result.intervalSeconds = seconds;
+  }
   for (const key of ["browserNotifications", "soundEnabled", "barkEnabled", "openProductOnHit"] as const) {
     if (typeof saved[key] === "boolean") result[key] = saved[key];
   }

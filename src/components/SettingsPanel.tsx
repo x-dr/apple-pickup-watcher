@@ -1,7 +1,7 @@
 import { BellOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
-import { Button, InputNumber, Switch, Tooltip } from "antd";
+import { Button, Select, Switch, Tooltip } from "antd";
 
-import type { HealthResponse, Settings } from "@/domain/types";
+import { QUERY_INTERVAL_OPTIONS, type HealthResponse, type Settings } from "@/domain/types";
 
 interface Props {
   settings: Settings;
@@ -25,13 +25,11 @@ export function SettingsPanel({ settings, health, checking, canCheck, testing, o
       </div>
       <div className="setting-row">
         <div><strong>查询间隔</strong><span>建议 60 秒以上，降低被 Apple 拦截的概率</span></div>
-        <InputNumber
-          min={30}
-          max={3600}
-          step={10}
+        <Select
+          className="interval-select"
           value={settings.intervalSeconds}
-          suffix="秒"
-          onChange={(value) => onChange({ intervalSeconds: typeof value === "number" ? value : 60 })}
+          options={QUERY_INTERVAL_OPTIONS.map((seconds) => ({ value: seconds, label: `${seconds} 秒` }))}
+          onChange={(intervalSeconds) => onChange({ intervalSeconds })}
         />
       </div>
       <div className="setting-row">

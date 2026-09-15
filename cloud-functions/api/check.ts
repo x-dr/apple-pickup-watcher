@@ -14,7 +14,7 @@ export async function onRequestPost(context: MakersContext): Promise<Response> {
   const denied = authorize(context);
   if (denied) return denied;
 
-  const seconds = retryAfter(`check:${context.clientIp ?? "unknown"}`, 25_000);
+  const seconds = retryAfter(`check:${context.clientIp ?? "unknown"}`, 5_000);
   if (seconds > 0) {
     return json(
       { error: "too_many_requests", message: `查询过于频繁，请 ${seconds} 秒后重试` },

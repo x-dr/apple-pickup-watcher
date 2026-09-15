@@ -99,7 +99,12 @@ function Dashboard() {
                 onAdd={watcher.addTarget}
                 onAddMany={watcher.addTargets}
               />
-              <TargetList rows={watcher.rows} checking={watcher.checking} onRemove={watcher.removeTarget} />
+              <TargetList
+                rows={watcher.rows}
+                checking={watcher.checking}
+                nextCheckAt={watcher.nextCheckAt}
+                onRemove={watcher.removeTarget}
+              />
             </div>
             <aside className="side-column">
               <SettingsPanel
@@ -118,9 +123,6 @@ function Dashboard() {
 
           <footer className="page-footer">
             <span>目录快照：{catalogFreshness || (watcher.catalogLoading ? "载入中" : "暂不可用")}</span>
-            {watcher.running && watcher.nextCheckAt && (
-              <span>下一轮约 {new Date(watcher.nextCheckAt).toLocaleTimeString("zh-CN", { hour12: false })}</span>
-            )}
             <span>页面关闭后监控会停止</span>
             <a href="https://github.com/ENCHIGO/apple-pickup-watcher" target="_blank" rel="noreferrer">原项目与许可</a>
           </footer>

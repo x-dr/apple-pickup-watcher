@@ -14,22 +14,44 @@ const DesktopTargetTable = lazy(() => import("./DesktopTargetTable"));
 interface Props {
   rows: TargetState[];
   checking: boolean;
+  nextCheckAt: number | null;
   onRemove(key: string): void;
 }
 
-export function TargetList({ rows, checking, onRemove }: Props) {
+export function TargetList({ rows, checking, nextCheckAt, onRemove }: Props) {
   const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 720px)").matches);
+  const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const media = window.matchMedia("(max-width: 720px)");
     const change = () => setMobile(media.matches);
     media.addEventListener("change", change);
     return () => media.removeEventListener("change", change);
   }, []);
+  useEffect(() => {
+    if (nextCheckAt === null) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [nextCheckAt]);
+
+  const secondsUntilNextCheck = nextCheckAt === null
+    ? null
+    : Math.max(0, Math.ceil((nextCheckAt - now) / 1_000));
 
   return (
     <section className="panel targets-panel">
       <div className="section-heading">
-        <div><span className="eyebrow">LIVE WATCHLIST</span><h2>监控列表</h2></div>
+        <div>
+          <span className="eyebrow">LIVE WATCHLIST</span>
+          <div className="target-list-title">
+            <h2>监控列表</h2>
+            {checking ? (
+              <span className="next-check-time" role="status">正在查询</span>
+            ) : secondsUntilNextCheck !== null ? (
+              <span className="next-check-time" role="timer">下次查询：{secondsUntilNextCheck} 秒后</span>
+            ) : null}
+          </div>
+        </div>
         <span className="section-note">持续有货不会重复提醒</span>
       </div>
       {rows.length === 0 ? (

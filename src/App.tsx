@@ -97,6 +97,7 @@ function Dashboard() {
                 rows={watcher.rows}
                 onLocaleChange={(locale) => watcher.updateSettings({ locale })}
                 onAdd={watcher.addTarget}
+                onAddMany={watcher.addTargets}
               />
               <TargetList rows={watcher.rows} checking={watcher.checking} onRemove={watcher.removeTarget} />
             </div>

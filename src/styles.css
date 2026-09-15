@@ -160,6 +160,12 @@ button, input { font: inherit; }
 .field-wide { grid-column: span 2; }
 .field-model { grid-column: span 4; }
 .add-target-button { grid-column: span 2; min-width: 112px; }
+.target-builder-actions {
+  display: grid;
+  grid-column: span 4;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
 
 .setting-row {
   display: flex;
@@ -232,7 +238,7 @@ button, input { font: inherit; }
   .builder-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .field, .field-wide, .field-model { grid-column: span 1; }
   .field-model { grid-column: 1 / -1; }
-  .add-target-button { grid-column: 1 / -1; width: 100%; }
+  .add-target-button, .target-builder-actions { grid-column: 1 / -1; width: 100%; }
   .side-column { grid-template-columns: 1fr; }
   .desktop-targets { display: none; }
   .mobile-targets { display: grid; gap: 10px; }
@@ -254,7 +260,8 @@ button, input { font: inherit; }
   .summary-card strong { font-size: 22px; }
   .target-builder, .settings-panel { padding: 18px; }
   .builder-grid { grid-template-columns: 1fr; }
-  .field, .field-wide, .field-model, .add-target-button { grid-column: 1; }
+  .field, .field-wide, .field-model, .add-target-button, .target-builder-actions { grid-column: 1; }
+  .target-builder-actions { grid-template-columns: 1fr; }
   .section-note { display: none; }
 }
 

@@ -109,17 +109,29 @@ export function useWatcher() {
     else cancelCheck();
   }, [cancelCheck, prepare]);
 
-  const addTarget = useCallback((target: Target) => {
-    const current = rowsRef.current;
-    const key = targetKey(target);
-    const groups = new Set(current.map((row) => `${row.target.locale}|${row.target.storeNumber}`));
-    if (current.length >= 24 || current.some((row) => targetKey(row.target) === key) ||
-      (groups.size >= 6 && !groups.has(`${target.locale}|${target.storeNumber}`))) return;
-    const next = [...current, { target: { ...target }, availability: { kind: "unknown", reason: "not_yet_checked" } as const, lastCheckedMs: null, consecutiveFailures: 0 }];
+  const addTargets = useCallback((targets: Target[]) => {
+    const next = [...rowsRef.current];
+    const keys = new Set(next.map((row) => targetKey(row.target)));
+    const groups = new Set(next.map((row) => `${row.target.locale}|${row.target.storeNumber}`));
+    const added: Target[] = [];
+    for (const target of targets) {
+      const key = targetKey(target);
+      const storeKey = `${target.locale}|${target.storeNumber}`;
+      if (next.length >= 24) break;
+      if (keys.has(key) || (groups.size >= 6 && !groups.has(storeKey))) continue;
+      next.push({ target: { ...target }, availability: { kind: "unknown", reason: "not_yet_checked" }, lastCheckedMs: null, consecutiveFailures: 0 });
+      keys.add(key);
+      groups.add(storeKey);
+      added.push(target);
+    }
+    if (!added.length) return;
     replaceRows(next);
     if (!saveTargets(next.map((row) => row.target))) pushLog("浏览器无法保存监控目标，刷新后本次修改可能丢失。");
-    pushLog(`已添加：${target.storeTitle} · ${target.productName}`);
+    pushLog(added.length === 1
+      ? `已添加：${added[0]!.storeTitle} · ${added[0]!.productName}`
+      : `已批量添加 ${added.length} 项：${added[0]!.storeTitle}`);
   }, [pushLog, replaceRows]);
+  const addTarget = useCallback((target: Target) => addTargets([target]), [addTargets]);
 
   const removeTarget = useCallback((key: string) => {
     const next = rowsRef.current.filter((row) => targetKey(row.target) !== key);
@@ -220,7 +232,7 @@ export function useWatcher() {
   return {
     settings, rows, ...catalog, health, healthError, retryHealth, accessToken, authOpen, authChecking, authError,
     running, checking, notificationTesting, trouble, logs, nextCheckAt, setAuthOpen, submitAccessToken,
-    clearAccessToken, updateSettings, addTarget, removeTarget, setRunning, runCheck, testNotifications,
+    clearAccessToken, updateSettings, addTarget, addTargets, removeTarget, setRunning, runCheck, testNotifications,
   };
 }
 

@@ -44,6 +44,15 @@ beforeEach(async () => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); });
 
 describe("监控状态与通知", () => {
+  it("批量添加目标时跳过重复项并一次保存全部新目标", async () => {
+    await add();
+    await act(async () => model.addTargets([target(), target("BBB/A"), target("CCC/A")]));
+
+    expect(model.rows.map((row) => row.target.partNumber)).toEqual(["AAA/A", "BBB/A", "CCC/A"]);
+    expect(JSON.parse(localStorage.getItem("apw:web:targets:v1")!)).toHaveLength(3);
+    expect(model.logs.at(-1)).toContain("已批量添加 2 项");
+  });
+
   it("查询期间增删目标不会被旧响应覆盖，也不发送已删除目标的提醒", async () => {
     await add(); const pending = deferred<CheckResponse>();
     vi.mocked(checkTargets).mockReturnValueOnce(pending.promise);

@@ -16,6 +16,7 @@ import {
   type CatalogPayload,
   type Category,
   type Product,
+  type Store,
   type Target,
   type TargetState,
 } from "@/domain/types";
@@ -27,11 +28,24 @@ interface Props {
   rows: TargetState[];
   onLocaleChange(locale: string): void;
   onAdd(target: Target): void;
+  onAddMany(targets: Target[]): void;
 }
 
 const searchable = { optionFilterProp: "label" } as const;
 
-export function TargetBuilder({ locale, catalog, loading, rows, onLocaleChange, onAdd }: Props) {
+function buildTarget(locale: string, store: Store, product: Product): Target {
+  return {
+    locale,
+    storeNumber: store.number,
+    storeTitle: store.title,
+    partNumber: product.partNumber,
+    productName: product.title,
+    productUrl: productUrl(locale, product.partNumber, product.companionPart),
+    ...(product.companionPart ? { companionPart: product.companionPart } : {}),
+  };
+}
+
+export function TargetBuilder({ locale, catalog, loading, rows, onLocaleChange, onAdd, onAddMany }: Props) {
   const [category, setCategory] = useState<Category>("iphone");
   const [storeNumber, setStoreNumber] = useState<string>();
   const [partNumber, setPartNumber] = useState<string>();
@@ -73,26 +87,25 @@ export function TargetBuilder({ locale, catalog, loading, rows, onLocaleChange, 
       : item.partNumber === partNumber,
   );
   const selectedStore = activeCatalog?.stores.find((item) => item.number === storeNumber);
-  const target = selectedProduct && selectedStore
-    ? {
-        locale,
-        storeNumber: selectedStore.number,
-        storeTitle: selectedStore.title,
-        partNumber: selectedProduct.partNumber,
-        productName: selectedProduct.title,
-        productUrl: productUrl(
-          locale,
-          selectedProduct.partNumber,
-          selectedProduct.companionPart,
-        ),
-        ...(selectedProduct.companionPart ? { companionPart: selectedProduct.companionPart } : {}),
-      }
-    : null;
-  const duplicate = target ? rows.some((row) => targetKey(row.target) === targetKey(target)) : false;
+  const target = selectedProduct && selectedStore ? buildTarget(locale, selectedStore, selectedProduct) : null;
+  const existingKeys = new Set(rows.map((row) => targetKey(row.target)));
+  const duplicate = target ? existingKeys.has(targetKey(target)) : false;
+  const allColorTargets = selectedStore && category === "iphone" && family && capacity
+    ? products
+        .filter((product) =>
+          product.category === category &&
+          product.family === family &&
+          product.capacity === capacity &&
+          product.color !== ""
+        )
+        .filter((product, index, items) => items.findIndex((candidate) => candidate.color === product.color) === index)
+        .map((product) => buildTarget(locale, selectedStore, product))
+    : [];
+  const newColorTargets = allColorTargets.filter((item) => !existingKeys.has(targetKey(item)));
   const storeGroups = new Set(rows.map((row) => `${row.target.locale}|${row.target.storeNumber}`));
-  const wouldExceedStores = target
-    ? !storeGroups.has(`${target.locale}|${target.storeNumber}`) && storeGroups.size >= 6
-    : false;
+  const selectedStoreKey = selectedStore ? `${locale}|${selectedStore.number}` : null;
+  const wouldExceedStores = Boolean(selectedStoreKey && !storeGroups.has(selectedStoreKey) && storeGroups.size >= 6);
+  const wouldExceedTargetLimit = rows.length + newColorTargets.length > 24;
 
   const resetProduct = () => {
     setPartNumber(undefined);
@@ -104,6 +117,12 @@ export function TargetBuilder({ locale, catalog, loading, rows, onLocaleChange, 
   const add = () => {
     if (!target || duplicate || wouldExceedStores || rows.length >= 24) return;
     onAdd(target);
+    resetProduct();
+  };
+
+  const addAllColors = () => {
+    if (!newColorTargets.length || wouldExceedStores || wouldExceedTargetLimit) return;
+    onAddMany(newColorTargets);
     resetProduct();
   };
 
@@ -183,15 +202,41 @@ export function TargetBuilder({ locale, catalog, loading, rows, onLocaleChange, 
               />
             </label>
           )}
-          <Button
-            className="add-target-button"
-            type="primary"
-            icon={<PlusOutlined />}
-            disabled={!target || duplicate || wouldExceedStores || rows.length >= 24}
-            onClick={add}
-          >
-            {duplicate ? "已添加" : wouldExceedStores ? "门店已达上限" : "添加目标"}
-          </Button>
+          {category === "iphone" ? (
+            <div className="target-builder-actions">
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                disabled={!target || duplicate || wouldExceedStores || rows.length >= 24}
+                onClick={add}
+              >
+                {duplicate ? "已添加" : wouldExceedStores ? "门店已达上限" : "添加目标"}
+              </Button>
+              <Button
+                icon={<PlusOutlined />}
+                disabled={!selectedStore || !family || !capacity || !newColorTargets.length || wouldExceedStores || wouldExceedTargetLimit}
+                onClick={addAllColors}
+              >
+                {wouldExceedStores
+                  ? "门店已达上限"
+                  : wouldExceedTargetLimit
+                    ? "超出目标上限"
+                    : allColorTargets.length > 0 && newColorTargets.length === 0
+                      ? "颜色均已添加"
+                      : `添加全部颜色${newColorTargets.length ? `（${newColorTargets.length}）` : ""}`}
+              </Button>
+            </div>
+          ) : (
+            <Button
+              className="add-target-button"
+              type="primary"
+              icon={<PlusOutlined />}
+              disabled={!target || duplicate || wouldExceedStores || rows.length >= 24}
+              onClick={add}
+            >
+              {duplicate ? "已添加" : wouldExceedStores ? "门店已达上限" : "添加目标"}
+            </Button>
+          )}
         </div>
       )}
     </section>

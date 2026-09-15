@@ -1,29 +1,16 @@
 import { DeleteOutlined, ExportOutlined } from "@ant-design/icons";
-import { Button, Empty, Table, Tag, Tooltip, type TableProps } from "antd";
+import { Button, Empty, Skeleton } from "antd";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { StatusTag, historyDetail } from "./TargetStatus";
 
 import {
   availabilityDetail,
-  availabilityLabel,
   formatCheckedTime,
   targetKey,
-  type Availability,
   type TargetState,
 } from "@/domain/types";
 
-function StatusTag({ availability }: { availability: Availability }) {
-  const label = availabilityLabel(availability);
-  const color = availability.kind === "in_stock"
-    ? "success"
-    : availability.kind === "out_of_stock"
-      ? "default"
-      : availability.reason === "not_yet_checked"
-        ? "processing"
-        : "error";
-  const tag = <Tag color={color}>{label}</Tag>;
-  const detail = availabilityDetail(availability);
-  return detail ? <Tooltip title={detail}>{tag}</Tooltip> : tag;
-}
-
+const DesktopTargetTable = lazy(() => import("./DesktopTargetTable"));
 interface Props {
   rows: TargetState[];
   checking: boolean;
@@ -31,50 +18,13 @@ interface Props {
 }
 
 export function TargetList({ rows, checking, onRemove }: Props) {
-  const columns: TableProps<TargetState>["columns"] = [
-    {
-      title: "状态",
-      key: "status",
-      width: 92,
-      render: (_, row) => <StatusTag availability={row.availability} />,
-    },
-    {
-      title: "门店",
-      dataIndex: ["target", "storeTitle"],
-      key: "store",
-      width: 190,
-    },
-    {
-      title: "型号",
-      dataIndex: ["target", "productName"],
-      key: "product",
-      ellipsis: true,
-    },
-    {
-      title: "最后检查",
-      key: "checkedAt",
-      width: 112,
-      render: (_, row) => <span className="tabular">{formatCheckedTime(row.lastCheckedMs)}</span>,
-    },
-    {
-      title: "操作",
-      key: "actions",
-      width: 130,
-      render: (_, row) => (
-        <div className="row-actions">
-          <Button type="link" size="small" href={row.target.productUrl} target="_blank" icon={<ExportOutlined />}>Apple</Button>
-          <Button
-            type="text"
-            danger
-            size="small"
-            aria-label={`删除 ${row.target.productName}`}
-            icon={<DeleteOutlined />}
-            onClick={() => onRemove(targetKey(row.target))}
-          />
-        </div>
-      ),
-    },
-  ];
+  const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 720px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 720px)");
+    const change = () => setMobile(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
 
   return (
     <section className="panel targets-panel">
@@ -86,24 +36,20 @@ export function TargetList({ rows, checking, onRemove }: Props) {
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="选择门店和型号后添加监控目标" />
       ) : (
         <>
-          <div className="desktop-targets">
-            <Table<TargetState>
-              rowKey={(row) => targetKey(row.target)}
-              columns={columns}
-              dataSource={rows}
-              pagination={false}
-              loading={checking}
-              tableLayout="fixed"
-              size="middle"
-            />
-          </div>
-          <div className="mobile-targets">
+          {!mobile ? <div className="desktop-targets">
+            <Suspense fallback={<Skeleton active paragraph={{ rows: 2 }} />}>
+              <DesktopTargetTable rows={rows} checking={checking} onRemove={onRemove} />
+            </Suspense>
+          </div> :
+          <div className="mobile-targets" aria-busy={checking}>
+            {checking && <span role="status">正在查询…</span>}
             {rows.map((row) => (
               <article className="target-card" key={targetKey(row.target)}>
                 <div className="target-card-top">
                   <StatusTag availability={row.availability} />
                   <span className="tabular">{formatCheckedTime(row.lastCheckedMs)}</span>
                 </div>
+                {historyDetail(row) && <span>{historyDetail(row)}</span>}
                 <strong>{row.target.productName}</strong>
                 <span>{row.target.storeTitle}</span>
                 {availabilityDetail(row.availability) && (
@@ -115,7 +61,7 @@ export function TargetList({ rows, checking, onRemove }: Props) {
                 </div>
               </article>
             ))}
-          </div>
+          </div>}
         </>
       )}
     </section>

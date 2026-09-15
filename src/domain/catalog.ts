@@ -1,19 +1,31 @@
-import type { CatalogPayload, Category, Product } from "./types";
+import { REGIONS, type CatalogPayload, type Category, type Product } from "./types";
 
 const cache = new Map<string, Promise<CatalogPayload>>();
 
 export function loadCatalog(locale: string): Promise<CatalogPayload> {
+  if (!REGIONS.some((region) => region.locale === locale)) return Promise.reject(new Error("不支持的地区"));
   const existing = cache.get(locale);
   if (existing) return existing;
 
-  const request = fetch(`/catalog/${locale}.json`, { cache: "force-cache" }).then(
+  const request = fetch(`/catalog/${locale}.json`, { cache: "no-cache", signal: AbortSignal.timeout(15_000) }).then(
     async (response) => {
       if (!response.ok) {
         throw new Error(`目录载入失败（HTTP ${response.status}）`);
       }
-      return (await response.json()) as CatalogPayload;
+      const value = (await response.json()) as CatalogPayload;
+      if (!value || value.locale !== locale || !Array.isArray(value.stores) || !Array.isArray(value.products) ||
+        !Number.isFinite(Date.parse(value.generatedAt)) || typeof value.sourceCommit !== "string" ||
+        !value.stores.every((store) => store && [store.number, store.name, store.title].every((field) => typeof field === "string")) ||
+        !value.products.every((product) => product && [product.partNumber, product.family, product.capacity, product.color, product.title].every((field) => typeof field === "string") &&
+          ["iphone", "ipad", "mac", "watch"].includes(product.category) && (product.companionPart === undefined || typeof product.companionPart === "string"))) {
+        throw new Error("目录数据格式或地区不正确");
+      }
+      return value;
     },
-  );
+  ).catch((error: unknown) => {
+    cache.delete(locale);
+    throw error;
+  });
   cache.set(locale, request);
   return request;
 }

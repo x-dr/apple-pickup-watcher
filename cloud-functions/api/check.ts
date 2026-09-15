@@ -34,7 +34,7 @@ export async function onRequestPost(context: MakersContext): Promise<Response> {
       typeof input.previousFailures === "object" && input.previousFailures !== null
         ? (input.previousFailures as Record<string, number>)
         : {};
-    return json(await checkAppleTargets(targets, previousFailures));
+    return json(await checkAppleTargets(targets, previousFailures, fetch, context.request.signal));
   } catch (error) {
     return errorResponse(error);
   }

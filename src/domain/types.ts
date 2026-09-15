@@ -58,6 +58,7 @@ export interface TargetState {
   availability: Availability;
   lastCheckedMs: number | null;
   consecutiveFailures: number;
+  lastConfirmed?: { kind: "in_stock" | "out_of_stock"; checkedAt: number };
 }
 
 export interface Settings {
@@ -74,6 +75,7 @@ export interface CheckResponse {
   checkedAt: number;
   requestCount: number;
   rows: TargetState[];
+  retryAfterSeconds?: number;
 }
 
 export interface HealthResponse {
@@ -111,6 +113,21 @@ export function targetKey(target: Target): string {
 
 export function isUntrusted(availability: Availability): boolean {
   return availability.kind === "unknown" && availability.reason !== "not_yet_checked";
+}
+
+export function isAvailability(value: unknown): value is Availability {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  if (item.kind === "in_stock" || item.kind === "out_of_stock") return true;
+  if (item.kind !== "unknown") return false;
+  switch (item.reason) {
+    case "not_yet_checked": return true;
+    case "blocked": case "transport": return typeof item.detail === "string";
+    case "rate_limited": return item.detail === undefined || typeof item.detail === "string";
+    case "schema_drift": return typeof item.field === "string" && typeof item.raw === "string";
+    case "apple_error": return typeof item.message === "string";
+    default: return false;
+  }
 }
 
 export function availabilityLabel(availability: Availability): string {

@@ -1,3 +1,5 @@
+import { readResponseText, retryAfterSeconds, withResponse } from "./http";
+
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const SESSION_TTL_MS = 20 * 60 * 1000;
 const BLOCK_COOLDOWN_MS = 5 * 60 * 1000;
@@ -48,7 +50,7 @@ const regions: Record<string, RegionProfile> = {
 };
 
 const sessions = new Map<string, { cookie: string; expiresAt: number }>();
-const blockedUntil = new Map<string, number>();
+const cooldowns = new Map<string, { until: number; reason: "blocked" | "rate_limited"; attempts: number }>();
 
 const chromeHeaders = {
   "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
@@ -82,69 +84,41 @@ function cookieHeader(headers: Headers): string {
   return [...new Set(pairs)].join("; ");
 }
 
-async function fetchWithTimeout(
-  fetchImpl: typeof fetch,
-  input: string,
-  init: RequestInit,
-  timeoutMs: number,
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetchImpl(input, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function warmSession(locale: string, profile: RegionProfile, fetchImpl: typeof fetch): Promise<string> {
+async function warmSession(locale: string, profile: RegionProfile, fetchImpl: typeof fetch, signal: AbortSignal): Promise<string> {
   const cached = sessions.get(locale);
   if (cached && cached.expiresAt > Date.now()) return cached.cookie;
   try {
-    const response = await fetchWithTimeout(
-      fetchImpl,
+    return await withResponse(
       `${profile.baseUrl}/shop/bag`,
       {
+        signal,
         redirect: "follow",
         headers: {
           ...chromeHeaders,
-          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+          accept: "text/html,application/xhtml+xml,*/*;q=0.8",
           "accept-language": profile.language,
-          "upgrade-insecure-requests": "1",
         },
       },
       8_000,
+      async (response) => {
+        const cookie = response.ok ? cookieHeader(response.headers) : "";
+        if (cookie) sessions.set(locale, { cookie, expiresAt: Date.now() + SESSION_TTL_MS });
+        return cookie;
+      },
+      fetchImpl,
     );
-    const cookie = response.ok ? cookieHeader(response.headers) : "";
-    sessions.set(locale, { cookie, expiresAt: Date.now() + SESSION_TTL_MS });
-    return cookie;
   } catch {
+    signal.throwIfAborted();
     return "";
   }
 }
 
-async function readBody(response: Response): Promise<string> {
-  if (!response.body) return "";
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let length = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    length += value.byteLength;
-    if (length > MAX_RESPONSE_BYTES) {
-      await reader.cancel();
-      throw new Error("响应内容超过 4 MiB 上限");
-    }
-    chunks.push(value);
-  }
-  const result = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(result);
+function coolDown(locale: string, failure: UnknownAvailability, retrySeconds = 0): void {
+  if (failure.reason !== "blocked" && failure.reason !== "rate_limited") return;
+  const attempts = Math.min(5, (cooldowns.get(locale)?.attempts ?? 0) + 1);
+  const delay = failure.reason === "blocked" ? BLOCK_COOLDOWN_MS : Math.min(900_000, 60_000 * 2 ** (attempts - 1));
+  cooldowns.set(locale, { until: Date.now() + Math.max(delay, retrySeconds * 1000), reason: failure.reason, attempts });
+  if (failure.reason === "blocked") sessions.delete(locale);
 }
 
 function classifyHttp(response: Response): UnknownAvailability | null {
@@ -235,37 +209,21 @@ function parseStoreRows(targets: QueryTarget[], stores: unknown[]): Map<string, 
     for (const target of targets) result.set(target.partNumber, failure);
     return result;
   }
+  const partAvailability = (part: string): Availability => {
+    const entry = asRecord(parts[part]);
+    if (!entry) return unknown("schema_drift", "响应缺少目标型号", `partsAvailability.${part}`, "missing");
+    if (typeof entry.partNumber === "string" && entry.partNumber.trim() && entry.partNumber.trim() !== part) {
+      return unknown("schema_drift", "型号键与响应内容不一致", `partsAvailability.${part}.partNumber`, entry.partNumber);
+    }
+    return availabilityFrom(entry.pickupDisplay);
+  };
   for (const target of targets) {
-    const entry = asRecord(parts[target.partNumber]);
-    if (!entry) {
-      result.set(
-        target.partNumber,
-        unknown(
-          "schema_drift",
-          "响应缺少目标型号",
-          `partsAvailability.${target.partNumber}`,
-          "missing",
-        ),
-      );
-      continue;
-    }
-    if (
-      typeof entry.partNumber === "string" &&
-      entry.partNumber.trim() &&
-      entry.partNumber.trim() !== target.partNumber
-    ) {
-      result.set(
-        target.partNumber,
-        unknown(
-          "schema_drift",
-          "型号键与响应内容不一致",
-          `partsAvailability.${target.partNumber}.partNumber`,
-          entry.partNumber,
-        ),
-      );
-      continue;
-    }
-    result.set(target.partNumber, availabilityFrom(entry.pickupDisplay));
+    const statuses = [target.partNumber, ...(target.companionPart ? [target.companionPart] : [])].map(partAvailability);
+    // Unknown component data must never be presented as a confirmed combination.
+    const availability = statuses.find((status) => status.kind === "unknown")
+      ?? statuses.find((status) => status.kind === "out_of_stock")
+      ?? { kind: "in_stock" };
+    result.set(target.partNumber, availability);
   }
   return result;
 }
@@ -273,13 +231,15 @@ function parseStoreRows(targets: QueryTarget[], stores: unknown[]): Map<string, 
 async function queryStore(
   targets: QueryTarget[],
   fetchImpl: typeof fetch,
+  signal: AbortSignal,
 ): Promise<Map<string, Availability>> {
   const first = targets[0]!;
   const profile = regions[first.locale]!;
-  const blocked = blockedUntil.get(first.locale) ?? 0;
-  if (blocked > Date.now()) {
-    const seconds = Math.ceil((blocked - Date.now()) / 1000);
-    throw unknown("blocked", `冷却中，约 ${seconds} 秒后可重试`);
+  signal.throwIfAborted();
+  const cooldown = cooldowns.get(first.locale);
+  if (cooldown && cooldown.until > Date.now()) {
+    const seconds = Math.ceil((cooldown.until - Date.now()) / 1000);
+    throw unknown(cooldown.reason, `冷却中，约 ${seconds} 秒后可重试`);
   }
   const parts = new Set<string>();
   for (const target of targets) {
@@ -288,11 +248,11 @@ async function queryStore(
   }
   const params = new URLSearchParams({ pl: "true", "mts.0": "regular", store: first.storeNumber });
   [...parts].forEach((part, index) => params.set(`parts.${index}`, part));
-  const cookie = await warmSession(first.locale, profile, fetchImpl);
-  const response = await fetchWithTimeout(
-    fetchImpl,
+  const cookie = await warmSession(first.locale, profile, fetchImpl, signal);
+  return withResponse(
     `${profile.baseUrl}/shop/retail/pickup-message?${params}`,
     {
+      signal,
       redirect: "manual",
       headers: {
         ...chromeHeaders,
@@ -306,19 +266,22 @@ async function queryStore(
       },
     },
     12_000,
+    async (response, readSignal) => {
+      const httpFailure = classifyHttp(response);
+      if (httpFailure) {
+        coolDown(first.locale, httpFailure, retryAfterSeconds(response.headers.get("retry-after")));
+        throw httpFailure;
+      }
+      const envelope = parseEnvelope(await readResponseText(response, MAX_RESPONSE_BYTES, readSignal));
+      if (envelope.error) {
+        coolDown(first.locale, envelope.error);
+        throw envelope.error;
+      }
+      cooldowns.delete(first.locale);
+      return parseStoreRows(targets, envelope.stores ?? []);
+    },
+    fetchImpl,
   );
-  const httpFailure = classifyHttp(response);
-  if (httpFailure) {
-    if (httpFailure.reason === "blocked") {
-      blockedUntil.set(first.locale, Date.now() + BLOCK_COOLDOWN_MS);
-      sessions.delete(first.locale);
-    }
-    throw httpFailure;
-  }
-  const raw = await readBody(response);
-  const envelope = parseEnvelope(raw);
-  if (envelope.error) throw envelope.error;
-  return parseStoreRows(targets, envelope.stores ?? []);
 }
 
 function isAvailability(value: unknown): value is UnknownAvailability {
@@ -329,19 +292,24 @@ export async function checkAppleTargets(
   targets: QueryTarget[],
   previousFailures: Record<string, number> = {},
   fetchImpl: typeof fetch = fetch,
-): Promise<{ healthy: boolean; checkedAt: number; requestCount: number; rows: QueryRow[] }> {
+  requestSignal?: AbortSignal,
+): Promise<{ healthy: boolean; checkedAt: number; requestCount: number; retryAfterSeconds: number; rows: QueryRow[] }> {
   const groups = new Map<string, QueryTarget[]>();
   for (const target of targets) {
     const key = `${target.locale}|${target.storeNumber}`;
     groups.set(key, [...(groups.get(key) ?? []), target]);
   }
 
-  const checkedAt = Date.now();
+  const deadline = AbortSignal.timeout(45_000);
+  const signal = requestSignal ? AbortSignal.any([requestSignal, deadline]) : deadline;
+  let requestCount = 0;
+  const countedFetch: typeof fetch = (input, init) => { requestCount += 1; return fetchImpl(input, init); };
   const rows: QueryRow[] = [];
-  for (const group of groups.values()) {
+  const storeGroups = [...groups.values()];
+  for (const [index, group] of storeGroups.entries()) {
     let statuses: Map<string, Availability>;
     try {
-      statuses = await queryStore(group, fetchImpl);
+      statuses = await queryStore(group, countedFetch, signal);
     } catch (error) {
       const failure = isAvailability(error)
         ? error
@@ -360,16 +328,17 @@ export async function checkAppleTargets(
       rows.push({
         target,
         availability,
-        lastCheckedMs: checkedAt,
-        consecutiveFailures: failure ? (previousFailures[key] ?? 0) + 1 : 0,
+        lastCheckedMs: Date.now(),
+        consecutiveFailures: failure ? Math.min(10_000, Math.max(0, Number.isFinite(previousFailures[key]) ? previousFailures[key]! : 0)) + 1 : 0,
       });
     }
-    if (groups.size > 1) await new Promise((resolve) => setTimeout(resolve, 350));
+    if (index < storeGroups.length - 1 && !signal.aborted) await new Promise((resolve) => setTimeout(resolve, 350));
   }
   return {
     healthy: rows.every((row) => row.availability.kind !== "unknown"),
-    checkedAt,
-    requestCount: groups.size,
+    checkedAt: Date.now(),
+    requestCount,
+    retryAfterSeconds: Math.max(0, ...targets.map((target) => Math.ceil(((cooldowns.get(target.locale)?.until ?? 0) - Date.now()) / 1000))),
     rows,
   };
 }

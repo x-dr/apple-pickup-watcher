@@ -7,6 +7,7 @@ import {
   type MakersContext,
 } from "./_shared/context";
 import { retryAfter } from "./_shared/rate-limit";
+import { readResponseText, withResponse } from "./_shared/http";
 
 function shortText(value: unknown, name: string, max: number): string {
   if (typeof value !== "string" || !value.trim() || value.length > max) {
@@ -25,7 +26,7 @@ export async function onRequestPost(context: MakersContext): Promise<Response> {
 
   const seconds = retryAfter(`notify:${context.clientIp ?? "unknown"}`, 3_000);
   if (seconds > 0) {
-    return json({ error: "too_many_requests", message: `提醒过于频繁，请 ${seconds} 秒后重试` }, 429);
+    return json({ error: "too_many_requests", message: `提醒过于频繁，请 ${seconds} 秒后重试` }, 429, { "retry-after": String(seconds) });
   }
 
   try {
@@ -50,8 +51,10 @@ export async function onRequestPost(context: MakersContext): Promise<Response> {
     if (parsedTarget.protocol !== "https:" || !isAppleHost) {
       throw new RequestError(400, "invalid_notification", "提醒链接必须是 Apple HTTPS 地址");
     }
-    const response = await fetch(barkUrl, {
+    await withResponse(barkUrl, {
       method: "POST",
+      redirect: "error",
+      signal: context.request.signal,
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         title,
@@ -60,11 +63,16 @@ export async function onRequestPost(context: MakersContext): Promise<Response> {
         group: "apple-pickup-watcher",
         level: "timeSensitive",
       }),
-      signal: AbortSignal.timeout(10_000),
+    }, 10_000, async (response, signal) => {
+      if (!response.ok) throw new RequestError(502, "bark_failed", `Bark 返回 HTTP ${response.status}`);
+      const raw = await readResponseText(response, 16 * 1024, signal);
+      let result: unknown;
+      try { result = JSON.parse(raw) as unknown; }
+      catch { throw new RequestError(502, "bark_failed", "Bark 未返回有效的推送确认"); }
+      if (!result || typeof result !== "object" || (result as Record<string, unknown>).code !== 200) {
+        throw new RequestError(502, "bark_failed", "Bark 未确认推送成功");
+      }
     });
-    if (!response.ok) {
-      throw new RequestError(502, "bark_failed", `Bark 返回 HTTP ${response.status}`);
-    }
     return json({ ok: true });
   } catch (error) {
     return errorResponse(error);

@@ -1,326 +1,227 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
-import { availabilityDetail, isUntrusted, targetKey, type CatalogPayload, type HealthResponse, type Settings, type Target, type TargetState } from "@/domain/types";
-import { loadCatalog } from "@/domain/catalog";
-import { ApiError, checkTargets, fetchHealth, sendBark, verifyAccessToken } from "@/services/api";
-import { ensureNotificationPermission, playAlertTone, showStockNotification } from "@/services/notifications";
-import {
-  loadAccessToken,
-  loadSettings,
-  loadTargetStates,
-  saveAccessToken,
-  saveSettings,
-  saveTargets,
-} from "@/services/storage";
-
-const MAX_LOG_LINES = 200;
-
-export interface WatcherModel {
-  settings: Settings;
-  rows: TargetState[];
-  catalog: CatalogPayload | null;
-  catalogLoading: boolean;
-  catalogError: string | null;
-  health: HealthResponse | null;
-  healthError: string | null;
-  accessToken: string;
-  authOpen: boolean;
-  authChecking: boolean;
-  authError: string | null;
-  running: boolean;
-  checking: boolean;
-  trouble: string | null;
-  logs: string[];
-  nextCheckAt: number | null;
-  setAuthOpen(open: boolean): void;
-  submitAccessToken(token: string): Promise<boolean>;
-  clearAccessToken(): void;
-  updateSettings(patch: Partial<Settings>): void;
-  addTarget(target: Target): void;
-  removeTarget(key: string): void;
-  setRunning(running: boolean): void;
-  runCheck(): Promise<void>;
-  testNotifications(): Promise<void>;
-}
+import { useCallback, useEffect, useRef, useState } from "react";
+import { availabilityDetail, isUntrusted, targetKey, type HealthResponse, type Settings, type Target, type TargetState } from "@/domain/types";
+import { checkDelay, failedQueryRows, mergeQueryRows } from "@/domain/watch-state";
+import { ApiError, checkTargets, fetchHealth, verifyAccessToken } from "@/services/api";
+import { loadAccessToken, loadSettings, loadTargetStates, normalizeSettings, saveAccessToken, saveSettings, saveTargets } from "@/services/storage";
+import { useCatalog } from "./useCatalog";
+import { useStockNotifications } from "./useStockNotifications";
 
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : "发生未知错误";
 }
 
-export function useWatcher(): WatcherModel {
+export function useWatcher() {
   const [settings, setSettings] = useState(loadSettings);
   const [rows, setRows] = useState(loadTargetStates);
-  const [catalog, setCatalog] = useState<CatalogPayload | null>(null);
-  const [catalogLoading, setCatalogLoading] = useState(true);
-  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const catalog = useCatalog(settings.locale);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
+  const [healthAttempt, setHealthAttempt] = useState(0);
   const [accessToken, setAccessToken] = useState(loadAccessToken);
   const [authOpen, setAuthOpen] = useState(false);
   const [authChecking, setAuthChecking] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
+  const [running, setRunningState] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [notificationTesting, setNotificationTesting] = useState(false);
   const [trouble, setTrouble] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [nextCheckAt, setNextCheckAt] = useState<number | null>(null);
 
   const rowsRef = useRef(rows);
-  const settingsRef = useRef(settings);
-  const accessTokenRef = useRef(accessToken);
-  const checkingRef = useRef(false);
-
-  useEffect(() => {
-    rowsRef.current = rows;
-  }, [rows]);
-  useEffect(() => {
-    settingsRef.current = settings;
-  }, [settings]);
-  useEffect(() => {
-    accessTokenRef.current = accessToken;
-  }, [accessToken]);
+  const contextRef = useRef({ settings, accessToken, health });
+  contextRef.current = { settings, accessToken, health };
+  const runningRef = useRef(false);
+  const mounted = useRef(true);
+  const activeRequest = useRef<AbortController | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const failures = useRef(0);
+  const notBefore = useRef(0);
+  const runCheckRef = useRef<() => Promise<void>>(async () => {});
+  const testingRef = useRef(false);
+  const authCheckingRef = useRef(false);
 
   const pushLog = useCallback((message: string) => {
-    const time = new Intl.DateTimeFormat("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    }).format(Date.now());
-    setLogs((current) => [...current, `[${time}] ${message}`].slice(-MAX_LOG_LINES));
+    if (!mounted.current) return;
+    const time = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(Date.now());
+    setLogs((current) => [...current, `[${time}] ${message}`].slice(-200));
   }, []);
+  const { notify, forget, prepare, testNotifications: testChannels } = useStockNotifications(contextRef, pushLog);
+  const replaceRows = useCallback((next: TargetState[]) => {
+    rowsRef.current = next;
+    setRows(next);
+  }, []);
+  const clearTimer = useCallback(() => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+  }, []);
+  const schedule = useCallback((delayMs: number) => {
+    clearTimer();
+    if (!runningRef.current || !mounted.current) return;
+    const delay = Math.max(delayMs, notBefore.current - Date.now(), 0);
+    setNextCheckAt(Date.now() + delay);
+    timer.current = setTimeout(() => { timer.current = null; void runCheckRef.current(); }, delay);
+  }, [clearTimer]);
+  const cancelCheck = useCallback(() => {
+    activeRequest.current?.abort();
+    activeRequest.current = null;
+    clearTimer();
+    setChecking(false);
+    setNextCheckAt(null);
+  }, [clearTimer]);
 
   useEffect(() => {
-    let active = true;
-    setCatalogLoading(true);
-    setCatalogError(null);
-    loadCatalog(settings.locale)
-      .then((payload) => {
-        if (active) setCatalog(payload);
-      })
-      .catch((error: unknown) => {
-        if (active) setCatalogError(describeError(error));
-      })
-      .finally(() => {
-        if (active) setCatalogLoading(false);
-      });
+    mounted.current = true;
     return () => {
-      active = false;
+      mounted.current = false;
+      runningRef.current = false;
+      activeRequest.current?.abort();
+      activeRequest.current = null;
+      clearTimer();
     };
-  }, [settings.locale]);
+  }, [clearTimer]);
 
   useEffect(() => {
-    fetchHealth()
-      .then((payload) => {
-        setHealth(payload);
-        if (payload.authConfigured && !accessTokenRef.current) setAuthOpen(true);
-      })
-      .catch((error: unknown) => setHealthError(describeError(error)));
-  }, []);
+    const controller = new AbortController();
+    setHealthError(null);
+    fetchHealth(controller.signal).then((value) => {
+      if (controller.signal.aborted) return;
+      setHealth(value);
+      if (value.authConfigured && !contextRef.current.accessToken) setAuthOpen(true);
+    }).catch((error: unknown) => { if (!controller.signal.aborted) setHealthError(describeError(error)); });
+    return () => controller.abort();
+  }, [healthAttempt]);
+  const retryHealth = useCallback(() => setHealthAttempt((value) => value + 1), []);
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
-    setSettings((current) => {
-      const next = { ...current, ...patch };
-      saveSettings(next);
-      return next;
-    });
-  }, []);
+    const next = normalizeSettings({ ...contextRef.current.settings, ...patch });
+    contextRef.current.settings = next;
+    setSettings(next);
+    if (!saveSettings(next)) pushLog("浏览器无法保存设置，本次修改仅在当前页面有效。");
+    if (patch.browserNotifications === true || patch.soundEnabled === true) prepare();
+  }, [prepare, pushLog]);
+
+  const setRunning = useCallback((value: boolean) => {
+    if (value && rowsRef.current.length === 0) return;
+    runningRef.current = value;
+    setRunningState(value);
+    if (value) { prepare(); void runCheckRef.current(); }
+    else cancelCheck();
+  }, [cancelCheck, prepare]);
 
   const addTarget = useCallback((target: Target) => {
+    const current = rowsRef.current;
     const key = targetKey(target);
-    setRows((current) => {
-      if (current.some((row) => targetKey(row.target) === key)) return current;
-      const next = [
-        ...current,
-        {
-          target,
-          availability: { kind: "unknown", reason: "not_yet_checked" } as const,
-          lastCheckedMs: null,
-          consecutiveFailures: 0,
-        },
-      ];
-      saveTargets(next.map((row) => row.target));
-      return next;
-    });
+    const groups = new Set(current.map((row) => `${row.target.locale}|${row.target.storeNumber}`));
+    if (current.length >= 24 || current.some((row) => targetKey(row.target) === key) ||
+      (groups.size >= 6 && !groups.has(`${target.locale}|${target.storeNumber}`))) return;
+    const next = [...current, { target: { ...target }, availability: { kind: "unknown", reason: "not_yet_checked" } as const, lastCheckedMs: null, consecutiveFailures: 0 }];
+    replaceRows(next);
+    if (!saveTargets(next.map((row) => row.target))) pushLog("浏览器无法保存监控目标，刷新后本次修改可能丢失。");
     pushLog(`已添加：${target.storeTitle} · ${target.productName}`);
-  }, [pushLog]);
+  }, [pushLog, replaceRows]);
 
   const removeTarget = useCallback((key: string) => {
-    setRows((current) => {
-      const next = current.filter((row) => targetKey(row.target) !== key);
-      saveTargets(next.map((row) => row.target));
-      return next;
-    });
-  }, []);
-
-  const notifyHits = useCallback(async (hits: TargetState[]) => {
-    if (hits.length === 0) return;
-    const currentSettings = settingsRef.current;
-    if (currentSettings.browserNotifications) showStockNotification(hits);
-    if (currentSettings.soundEnabled) void playAlertTone();
-    if (currentSettings.openProductOnHit) {
-      const opened = window.open(hits[0]!.target.productUrl, "_blank", "noopener,noreferrer");
-      if (!opened) pushLog("浏览器拦截了自动打开，请从有货条目点击“前往 Apple”。");
-    }
-    if (currentSettings.barkEnabled && health?.barkConfigured) {
-      const first = hits[0]!;
-      const body = hits.length === 1
-        ? `${first.target.storeTitle} · ${first.target.productName}`
-        : `${first.target.storeTitle} 等 ${hits.length} 项确认有货`;
-      try {
-        await sendBark(
-          { title: "Apple 到店取货有货了", body, url: first.target.productUrl },
-          accessTokenRef.current,
-        );
-        pushLog("Bark 到货提醒已发出。");
-      } catch (error) {
-        pushLog(`Bark 到货提醒失败：${describeError(error)}`);
-      }
-    }
-  }, [health?.barkConfigured, pushLog]);
+    const next = rowsRef.current.filter((row) => targetKey(row.target) !== key);
+    replaceRows(next);
+    forget(key);
+    if (!saveTargets(next.map((row) => row.target))) pushLog("浏览器无法保存监控目标，刷新后本次修改可能丢失。");
+    if (next.length === 0) setRunning(false);
+  }, [forget, pushLog, replaceRows, setRunning]);
 
   const runCheck = useCallback(async () => {
-    if (checkingRef.current || rowsRef.current.length === 0) return;
-    checkingRef.current = true;
-    setChecking(true);
-    setTrouble(null);
-    try {
-      const currentRows = rowsRef.current;
-      const previousByKey = new Map(currentRows.map((row) => [targetKey(row.target), row]));
-      const previousFailures = Object.fromEntries(
-        currentRows.map((row) => [targetKey(row.target), row.consecutiveFailures]),
-      );
-      const response = await checkTargets(
-        currentRows.map((row) => row.target),
-        previousFailures,
-        accessTokenRef.current,
-      );
-      const hits = response.rows.filter((row) => {
-        const previous = previousByKey.get(targetKey(row.target));
-        return row.availability.kind === "in_stock" && previous?.availability.kind !== "in_stock";
-      });
-      rowsRef.current = response.rows;
-      setRows(response.rows);
-      const failures = response.rows.filter((row) => isUntrusted(row.availability));
-      if (failures.length > 0) {
-        setTrouble(availabilityDetail(failures[0]!.availability));
-        pushLog(`本轮有 ${failures.length} 项状态未知，不能当作无货。`);
-      } else {
-        pushLog(`查询完成：${response.rows.length} 项，${response.requestCount} 次 Apple 请求。`);
-      }
-      for (const row of hits) pushLog(`有货：${row.target.storeTitle} · ${row.target.productName}`);
-      await notifyHits(hits);
-    } catch (error) {
-      const message = describeError(error);
-      setTrouble(message);
-      pushLog(`查询失败：${message}`);
-      if (error instanceof ApiError && error.status === 401) setAuthOpen(true);
-    } finally {
-      checkingRef.current = false;
-      setChecking(false);
-      if (running) setNextCheckAt(Date.now() + settingsRef.current.intervalSeconds * 1000);
-    }
-  }, [notifyHits, pushLog, running]);
-
-  useEffect(() => {
-    if (!running) {
-      setNextCheckAt(null);
+    if (activeRequest.current || rowsRef.current.length === 0 || !mounted.current) return;
+    if (notBefore.current > Date.now()) {
+      setTrouble(`查询冷却中，约 ${Math.ceil((notBefore.current - Date.now()) / 1000)} 秒后重试`);
+      schedule(notBefore.current - Date.now());
       return;
     }
-    void runCheck();
-    const timer = window.setInterval(() => void runCheck(), settings.intervalSeconds * 1000);
-    setNextCheckAt(Date.now() + settings.intervalSeconds * 1000);
-    return () => window.clearInterval(timer);
-  }, [runCheck, running, settings.intervalSeconds]);
+    clearTimer();
+    setNextCheckAt(null);
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    setChecking(true);
+    const snapshot = rowsRef.current;
+    let retrySeconds = 0;
+    try {
+      const response = await checkTargets(snapshot.map((row) => row.target), Object.fromEntries(snapshot.map((row) => [targetKey(row.target), row.consecutiveFailures])), contextRef.current.accessToken, controller.signal);
+      if (controller.signal.aborted || activeRequest.current !== controller || !mounted.current) return;
+      const next = mergeQueryRows(rowsRef.current, snapshot, response.rows);
+      replaceRows(next);
+      const unknownRows = next.filter((row) => isUntrusted(row.availability));
+      failures.current = unknownRows.length ? failures.current + 1 : 0;
+      retrySeconds = response.retryAfterSeconds ?? 0;
+      setTrouble(unknownRows.length ? availabilityDetail(unknownRows[0]!.availability) : null);
+      pushLog(unknownRows.length ? `本轮有 ${unknownRows.length} 项状态未知，不能当作无货。` : `查询完成：${response.rows.length} 项，${response.requestCount} 次 Apple 请求。`);
+      await notify(next, controller.signal);
+    } catch (error) {
+      if (controller.signal.aborted || activeRequest.current !== controller || !mounted.current) return;
+      const message = describeError(error);
+      failures.current += 1;
+      retrySeconds = error instanceof ApiError ? error.retryAfterSeconds : 0;
+      const availability = error instanceof ApiError && error.status === 429
+        ? { kind: "unknown", reason: "rate_limited", detail: message } as const
+        : { kind: "unknown", reason: "transport", detail: message } as const;
+      replaceRows(mergeQueryRows(rowsRef.current, snapshot, failedQueryRows(snapshot, availability)));
+      setTrouble(message);
+      pushLog(`查询失败：${message}`);
+      if (error instanceof ApiError && (error.status === 401 || error.code === "auth_not_configured")) {
+        runningRef.current = false;
+        setRunningState(false);
+        if (error.status === 401) setAuthOpen(true);
+      }
+    } finally {
+      if (activeRequest.current === controller && mounted.current) {
+        activeRequest.current = null;
+        setChecking(false);
+        notBefore.current = Date.now() + retrySeconds * 1000;
+        schedule(checkDelay(contextRef.current.settings.intervalSeconds, failures.current, retrySeconds));
+      }
+    }
+  }, [clearTimer, notify, pushLog, replaceRows, schedule]);
+  runCheckRef.current = runCheck;
+
+  useEffect(() => {
+    if (runningRef.current && !activeRequest.current) schedule(checkDelay(settings.intervalSeconds, failures.current));
+  }, [schedule, settings.intervalSeconds]);
 
   const submitAccessToken = useCallback(async (token: string) => {
-    setAuthChecking(true);
-    setAuthError(null);
+    if (authCheckingRef.current) return false;
+    authCheckingRef.current = true;
+    setAuthChecking(true); setAuthError(null);
     try {
       await verifyAccessToken(token.trim());
-      saveAccessToken(token.trim());
-      setAccessToken(token.trim());
-      setAuthOpen(false);
+      if (!mounted.current) return false;
+      if (!saveAccessToken(token.trim())) pushLog("浏览器无法保存访问口令，本次连接仅在当前页面有效。");
+      contextRef.current.accessToken = token.trim();
+      setAccessToken(token.trim()); setAuthOpen(false);
       pushLog("访问口令验证成功。");
       return true;
     } catch (error) {
-      setAuthError(describeError(error));
+      if (mounted.current) setAuthError(describeError(error));
       return false;
     } finally {
-      setAuthChecking(false);
+      authCheckingRef.current = false;
+      if (mounted.current) setAuthChecking(false);
     }
   }, [pushLog]);
-
   const clearAccessToken = useCallback(() => {
     saveAccessToken("");
-    setAccessToken("");
-    setAuthOpen(true);
-    setRunning(false);
-  }, []);
-
+    contextRef.current.accessToken = "";
+    setAccessToken(""); setAuthOpen(true); setRunning(false);
+  }, [setRunning]);
   const testNotifications = useCallback(async () => {
-    const current = settingsRef.current;
-    if (current.browserNotifications) {
-      const permission = await ensureNotificationPermission();
-      if (permission === "granted") {
-        new Notification("Apple Pickup Watcher", { body: "浏览器提醒工作正常。" });
-        pushLog("浏览器测试提醒已发出。");
-      } else {
-        pushLog("浏览器通知未获授权，请检查站点权限。");
-      }
-    }
-    if (current.soundEnabled) await playAlertTone();
-    if (current.barkEnabled) {
-      if (!health?.barkConfigured) {
-        pushLog("服务端尚未配置 BARK_URL。");
-      } else {
-        try {
-          await sendBark(
-            {
-              title: "Apple Pickup Watcher",
-              body: "Bark 测试提醒工作正常。",
-              url: "https://www.apple.com.cn/shop/buy-iphone",
-            },
-            accessTokenRef.current,
-          );
-          pushLog("Bark 测试提醒已发出。");
-        } catch (error) {
-          pushLog(`Bark 测试提醒失败：${describeError(error)}`);
-        }
-      }
-    }
-  }, [health?.barkConfigured, pushLog]);
+    if (testingRef.current) return;
+    testingRef.current = true; setNotificationTesting(true);
+    try { await testChannels(); }
+    finally { testingRef.current = false; if (mounted.current) setNotificationTesting(false); }
+  }, [testChannels]);
 
-  return useMemo(() => ({
-    settings,
-    rows,
-    catalog,
-    catalogLoading,
-    catalogError,
-    health,
-    healthError,
-    accessToken,
-    authOpen,
-    authChecking,
-    authError,
-    running,
-    checking,
-    trouble,
-    logs,
-    nextCheckAt,
-    setAuthOpen,
-    submitAccessToken,
-    clearAccessToken,
-    updateSettings,
-    addTarget,
-    removeTarget,
-    setRunning,
-    runCheck,
-    testNotifications,
-  }), [
-    accessToken, authChecking, authError, authOpen, catalog, catalogError, catalogLoading,
-    checking, clearAccessToken, health, healthError, logs, nextCheckAt, removeTarget,
-    rows, runCheck, running, settings, submitAccessToken, testNotifications, trouble,
-    updateSettings, addTarget,
-  ]);
+  return {
+    settings, rows, ...catalog, health, healthError, retryHealth, accessToken, authOpen, authChecking, authError,
+    running, checking, notificationTesting, trouble, logs, nextCheckAt, setAuthOpen, submitAccessToken,
+    clearAccessToken, updateSettings, addTarget, removeTarget, setRunning, runCheck, testNotifications,
+  };
 }
+
+export type WatcherModel = ReturnType<typeof useWatcher>;

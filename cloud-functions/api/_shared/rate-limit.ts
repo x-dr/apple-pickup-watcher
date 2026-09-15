@@ -1,16 +1,15 @@
-const lastRequests = new Map<string, number>();
+// Best-effort protection within one warm instance, not a distributed rate limit.
+const nextAllowedAt = new Map<string, number>();
 
 export function retryAfter(key: string, minimumIntervalMs: number, now = Date.now()): number {
-  const previous = lastRequests.get(key) ?? 0;
-  const waitMs = previous + minimumIntervalMs - now;
+  const waitMs = (nextAllowedAt.get(key) ?? 0) - now;
   if (waitMs > 0) return Math.ceil(waitMs / 1000);
-  lastRequests.set(key, now);
-
-  if (lastRequests.size > 2_000) {
-    const cutoff = now - 60 * 60 * 1000;
-    for (const [entryKey, timestamp] of lastRequests) {
-      if (timestamp < cutoff) lastRequests.delete(entryKey);
+  if (nextAllowedAt.size >= 2_000) {
+    for (const [entryKey, timestamp] of nextAllowedAt) {
+      if (timestamp <= now) nextAllowedAt.delete(entryKey);
     }
+    if (nextAllowedAt.size >= 2_000) return Math.max(1, Math.ceil((Math.min(...nextAllowedAt.values()) - now) / 1000));
   }
+  nextAllowedAt.set(key, now + minimumIntervalMs);
   return 0;
 }

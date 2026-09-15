@@ -7,12 +7,14 @@ interface Props {
   settings: Settings;
   health: HealthResponse | null;
   checking: boolean;
+  canCheck: boolean;
+  testing: boolean;
   onChange(patch: Partial<Settings>): void;
   onCheck(): void;
   onTest(): void;
 }
 
-export function SettingsPanel({ settings, health, checking, onChange, onCheck, onTest }: Props) {
+export function SettingsPanel({ settings, health, checking, canCheck, testing, onChange, onCheck, onTest }: Props) {
   return (
     <section className="panel settings-panel">
       <div className="section-heading compact">
@@ -33,7 +35,7 @@ export function SettingsPanel({ settings, health, checking, onChange, onCheck, o
         />
       </div>
       <div className="setting-row">
-        <div><strong>浏览器通知</strong><span>首次测试时浏览器会请求授权</span></div>
+        <div><strong>浏览器通知</strong><span>开始监控或测试提醒时请求授权</span></div>
         <Switch checked={settings.browserNotifications} onChange={(checked) => onChange({ browserNotifications: checked })} />
       </div>
       <div className="setting-row">
@@ -53,8 +55,8 @@ export function SettingsPanel({ settings, health, checking, onChange, onCheck, o
         <Switch checked={settings.openProductOnHit} onChange={(checked) => onChange({ openProductOnHit: checked })} />
       </div>
       <div className="settings-actions">
-        <Button loading={checking} onClick={onCheck}>立即查询</Button>
-        <Button icon={<BellOutlined />} onClick={onTest}>测试提醒</Button>
+        <Button loading={checking} disabled={!canCheck} onClick={onCheck}>立即查询</Button>
+        <Button loading={testing} icon={<BellOutlined />} onClick={onTest}>测试提醒</Button>
       </div>
     </section>
   );

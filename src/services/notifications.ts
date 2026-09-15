@@ -26,10 +26,18 @@ export function showStockNotification(rows: TargetState[]): boolean {
   return true;
 }
 
-export async function playAlertTone(): Promise<void> {
-  const AudioContextClass = window.AudioContext;
-  if (!AudioContextClass) return;
-  const context = new AudioContextClass();
+let audioContext: AudioContext | undefined;
+
+export async function prepareAudio(): Promise<boolean> {
+  if (!window.AudioContext) return false;
+  audioContext ??= new window.AudioContext();
+  if (audioContext.state === "suspended") await audioContext.resume();
+  return audioContext.state === "running";
+}
+
+export async function playAlertTone(): Promise<boolean> {
+  const context = audioContext;
+  if (!context || context.state !== "running") return false;
   const gain = context.createGain();
   gain.gain.setValueAtTime(0.0001, context.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.18, context.currentTime + 0.02);
@@ -44,5 +52,6 @@ export async function playAlertTone(): Promise<void> {
     oscillator.stop(context.currentTime + offset + 0.45);
   }
   await new Promise((resolve) => setTimeout(resolve, 750));
-  await context.close();
+  gain.disconnect();
+  return true;
 }

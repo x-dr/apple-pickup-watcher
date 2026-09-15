@@ -1,8 +1,7 @@
-import { Alert, App as AntApp, ConfigProvider, theme } from "antd";
+import { Alert, App as AntApp, Button, ConfigProvider, theme } from "antd";
 import zhCN from "antd/locale/zh_CN";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 
-import { AccessTokenModal } from "@/components/AccessTokenModal";
 import { ActivityLog } from "@/components/ActivityLog";
 import { AppHeader } from "@/components/AppHeader";
 import { SettingsPanel } from "@/components/SettingsPanel";
@@ -11,8 +10,11 @@ import { TargetBuilder } from "@/components/TargetBuilder";
 import { TargetList } from "@/components/TargetList";
 import { useWatcher } from "@/hooks/useWatcher";
 
+const AccessTokenModal = lazy(() => import("@/components/AccessTokenModal").then((module) => ({ default: module.AccessTokenModal })));
+
 function Dashboard() {
   const watcher = useWatcher();
+  const canCheck = watcher.rows.length > 0 && Boolean(watcher.health && !watcher.healthError && (watcher.accessToken || !watcher.health.authConfigured));
   const [dark, setDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
 
   useEffect(() => {
@@ -51,7 +53,7 @@ function Dashboard() {
           <AppHeader
             dark={dark}
             running={watcher.running}
-            canStart={watcher.rows.length > 0 && Boolean(watcher.accessToken || !watcher.health?.authConfigured)}
+            canStart={canCheck}
             backendReady={Boolean(watcher.health && !watcher.healthError)}
             hasToken={Boolean(watcher.accessToken)}
             onToggleTheme={() => setDark((value) => !value)}
@@ -68,7 +70,8 @@ function Dashboard() {
             />
           )}
           {watcher.healthError && (
-            <Alert type="error" showIcon title="无法连接 Node 云函数" description={watcher.healthError} />
+            <Alert type="error" showIcon title="无法连接监控服务" description={watcher.healthError}
+              action={<Button onClick={watcher.retryHealth}>重试连接</Button>} />
           )}
           {watcher.trouble && (
             <Alert
@@ -79,7 +82,8 @@ function Dashboard() {
             />
           )}
           {watcher.catalogError && (
-            <Alert type="error" showIcon title="型号目录载入失败" description={watcher.catalogError} />
+            <Alert type="error" showIcon title="型号目录载入失败" description={watcher.catalogError}
+              action={<Button loading={watcher.catalogLoading} onClick={watcher.retryCatalog}>重新加载</Button>} />
           )}
 
           <SummaryCards rows={watcher.rows} />
@@ -101,6 +105,8 @@ function Dashboard() {
                 settings={watcher.settings}
                 health={watcher.health}
                 checking={watcher.checking}
+                canCheck={canCheck}
+                testing={watcher.notificationTesting}
                 onChange={watcher.updateSettings}
                 onCheck={() => void watcher.runCheck()}
                 onTest={() => void watcher.testNotifications()}
@@ -110,7 +116,7 @@ function Dashboard() {
           </main>
 
           <footer className="page-footer">
-            <span>目录快照：{catalogFreshness || "载入中"}</span>
+            <span>目录快照：{catalogFreshness || (watcher.catalogLoading ? "载入中" : "暂不可用")}</span>
             {watcher.running && watcher.nextCheckAt && (
               <span>下一轮约 {new Date(watcher.nextCheckAt).toLocaleTimeString("zh-CN", { hour12: false })}</span>
             )}
@@ -119,14 +125,16 @@ function Dashboard() {
           </footer>
         </div>
 
-        <AccessTokenModal
+        <Suspense fallback={<span role="status">正在打开口令窗口…</span>}>
+        {watcher.authOpen && <AccessTokenModal
           open={watcher.authOpen}
           checking={watcher.authChecking}
           error={watcher.authError}
           hasToken={Boolean(watcher.accessToken)}
           onCancel={() => watcher.setAuthOpen(false)}
           onSubmit={watcher.submitAccessToken}
-        />
+        />}
+        </Suspense>
       </AntApp>
     </ConfigProvider>
   );

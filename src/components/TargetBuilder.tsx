@@ -47,7 +47,8 @@ export function TargetBuilder({ locale, catalog, loading, rows, onLocaleChange, 
     setColor(undefined);
   }, [locale]);
 
-  const products = catalog?.products ?? [];
+  const activeCatalog = catalog?.locale === locale ? catalog : null;
+  const products = activeCatalog?.products ?? [];
   const productOptions = useMemo(
     () => productsInCategory(products, category).map((item) => ({ value: item.partNumber, label: item.title })),
     [category, products],
@@ -62,8 +63,8 @@ export function TargetBuilder({ locale, catalog, loading, rows, onLocaleChange, 
     [capacity, category, family, products],
   );
   const stores = useMemo(
-    () => (catalog?.stores ?? []).map((item) => ({ value: item.number, label: item.title })),
-    [catalog?.stores],
+    () => (activeCatalog?.stores ?? []).map((item) => ({ value: item.number, label: item.title })),
+    [activeCatalog?.stores],
   );
 
   const selectedProduct: Product | undefined = products.find((item) =>
@@ -71,7 +72,7 @@ export function TargetBuilder({ locale, catalog, loading, rows, onLocaleChange, 
       ? item.category === category && item.family === family && item.capacity === capacity && item.color === color
       : item.partNumber === partNumber,
   );
-  const selectedStore = catalog?.stores.find((item) => item.number === storeNumber);
+  const selectedStore = activeCatalog?.stores.find((item) => item.number === storeNumber);
   const target = selectedProduct && selectedStore
     ? {
         locale,

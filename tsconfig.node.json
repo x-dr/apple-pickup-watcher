@@ -10,7 +10,9 @@
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/*"] }
   },
   "include": ["vite.config.ts", "cloud-functions/**/*.ts", "tests/**/*.ts"]
 }

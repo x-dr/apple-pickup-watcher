@@ -19,18 +19,14 @@ export type Availability =
 export interface QueryTarget {
   locale: string;
   storeNumber: string;
-  storeTitle: string;
   partNumber: string;
-  productName: string;
-  productUrl: string;
-  companionPart?: string;
 }
 
 export interface QueryRow {
-  target: QueryTarget;
+  locale: string;
+  storeNumber: string;
+  partNumber: string;
   availability: Availability;
-  lastCheckedMs: number;
-  consecutiveFailures: number;
 }
 
 interface RegionProfile {
@@ -218,12 +214,7 @@ function parseStoreRows(targets: QueryTarget[], stores: unknown[]): Map<string, 
     return availabilityFrom(entry.pickupDisplay);
   };
   for (const target of targets) {
-    const statuses = [target.partNumber, ...(target.companionPart ? [target.companionPart] : [])].map(partAvailability);
-    // Unknown component data must never be presented as a confirmed combination.
-    const availability = statuses.find((status) => status.kind === "unknown")
-      ?? statuses.find((status) => status.kind === "out_of_stock")
-      ?? { kind: "in_stock" };
-    result.set(target.partNumber, availability);
+    result.set(target.partNumber, partAvailability(target.partNumber));
   }
   return result;
 }
@@ -244,7 +235,6 @@ async function queryStore(
   const parts = new Set<string>();
   for (const target of targets) {
     parts.add(target.partNumber);
-    if (target.companionPart) parts.add(target.companionPart);
   }
   const params = new URLSearchParams({ pl: "true", "mts.0": "regular", store: first.storeNumber });
   [...parts].forEach((part, index) => params.set(`parts.${index}`, part));
@@ -290,7 +280,6 @@ function isAvailability(value: unknown): value is UnknownAvailability {
 
 export async function checkAppleTargets(
   targets: QueryTarget[],
-  previousFailures: Record<string, number> = {},
   fetchImpl: typeof fetch = fetch,
   requestSignal?: AbortSignal,
 ): Promise<{ healthy: boolean; checkedAt: number; requestCount: number; retryAfterSeconds: number; rows: QueryRow[] }> {
@@ -323,13 +312,11 @@ export async function checkAppleTargets(
         `partsAvailability.${target.partNumber}`,
         "missing",
       );
-      const key = `${target.locale}|${target.storeNumber}|${target.partNumber}`;
-      const failure = availability.kind === "unknown";
       rows.push({
-        target,
+        locale: target.locale,
+        storeNumber: target.storeNumber,
+        partNumber: target.partNumber,
         availability,
-        lastCheckedMs: Date.now(),
-        consecutiveFailures: failure ? Math.min(10_000, Math.max(0, Number.isFinite(previousFailures[key]) ? previousFailures[key]! : 0)) + 1 : 0,
       });
     }
     if (index < storeGroups.length - 1 && !signal.aborted) await new Promise((resolve) => setTimeout(resolve, 350));

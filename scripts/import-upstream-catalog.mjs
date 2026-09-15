@@ -6,6 +6,7 @@ const upstream = resolve(process.argv[2] ?? process.env.APW_UPSTREAM_DIR ?? "../
 const dataDir = resolve(upstream, "crates/apw-core/data");
 const outputDir = resolve("public/catalog");
 const locales = ["zh_CN", "zh_HK", "zh_TW", "ja_JP", "en_SG", "en_AU", "en_MY"];
+const supportedCategories = new Set(["iphone", "ipad", "mac"]);
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
@@ -82,9 +83,9 @@ function familyDisplayName(raw) {
 
 const slugWords = new Map([
   ["iphone", "iPhone"], ["ipad", "iPad"], ["imac", "iMac"], ["macbook", "MacBook"],
-  ["mac", "Mac"], ["apple", "Apple"], ["watch", "Watch"], ["air", "Air"],
+  ["mac", "Mac"], ["apple", "Apple"], ["air", "Air"],
   ["pro", "Pro"], ["max", "Max"], ["mini", "mini"], ["se", "SE"],
-  ["ultra", "Ultra"], ["studio", "Studio"], ["xdr", "XDR"], ["hermes", "Hermès"],
+  ["ultra", "Ultra"], ["studio", "Studio"], ["xdr", "XDR"],
 ]);
 
 function slugDisplayName(slug) {
@@ -96,8 +97,7 @@ function slugDisplayName(slug) {
 }
 
 const dimensionRank = new Map([
-  ["dimensionScreensize", 10], ["dimensionCaseSize", 20], ["dimensionCaseMaterial", 30],
-  ["dimensionChip", 40], ["dimensionCapacity", 60], ["dimensionConnection", 70],
+  ["dimensionScreensize", 10], ["dimensionChip", 40], ["dimensionCapacity", 60], ["dimensionConnection", 70],
   ["dimensionFinish", 80], ["dimensionColor", 90],
 ]);
 
@@ -122,9 +122,7 @@ function partNumber(product) {
   const direct = [product.partNumber, product.btrOrFdPartNumber].find(
     (value) => typeof value === "string" && value.trim(),
   );
-  if (direct) return direct.trim();
-  const watchPart = typeof product.part === "string" ? product.part.trim() : "";
-  return watchPart.includes("/") && dimensions(product).length > 0 ? watchPart : "";
+  return direct ? direct.trim() : "";
 }
 
 function displayName(data, key, value) {
@@ -183,9 +181,6 @@ function productsFromPage(page) {
       capacity,
       color,
       title: [decodedFamily ?? slugDisplayName(page.family), ...labels].filter(Boolean).join(" "),
-      ...(typeof data.companionPart === "string" && data.companionPart.trim()
-        ? { companionPart: data.companionPart.trim() }
-        : {}),
     });
   }
 
@@ -226,6 +221,7 @@ for (const locale of locales) {
   const pages = readJson(resolve(dataDir, `products_${locale}.json`));
   const byPart = new Map();
   for (const page of pages) {
+    if (!supportedCategories.has(page.category)) continue;
     for (const product of productsFromPage(page)) {
       if (!byPart.has(product.partNumber)) byPart.set(product.partNumber, product);
     }

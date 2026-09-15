@@ -51,19 +51,18 @@ export function loadTargetStates(): TargetState[] {
       typeof item.partNumber !== "string" || !/^[A-Z0-9]{1,28}\/[A-Z0-9]{1,3}$/.test(item.partNumber) ||
       typeof item.storeTitle !== "string" || !item.storeTitle.trim() || item.storeTitle.length > 120 ||
       typeof item.productName !== "string" || !item.productName.trim() || item.productName.length > 240 ||
-      (item.companionPart !== undefined && (typeof item.companionPart !== "string" || !/^[A-Z0-9]{1,28}\/[A-Z0-9]{1,3}$/.test(item.companionPart)))) continue;
+      item.companionPart !== undefined) continue;
     const target: Target = {
       locale: item.locale as string, storeNumber: item.storeNumber, storeTitle: item.storeTitle,
       partNumber: item.partNumber, productName: item.productName,
-      productUrl: productUrl(item.locale as string, item.partNumber, item.companionPart as string | undefined),
-      ...(item.companionPart ? { companionPart: item.companionPart as string } : {}),
+      productUrl: productUrl(item.locale as string, item.partNumber),
     };
     const storeKey = `${target.locale}|${target.storeNumber}`;
     if (keys.has(targetKey(target)) || (!stores.has(storeKey) && stores.size >= 6)) continue;
     keys.add(targetKey(target)); stores.add(storeKey); targets.push(target);
     if (targets.length === 24) break;
   }
-  return targets.map((target) => ({ target, availability: PENDING_AVAILABILITY, lastCheckedMs: null, consecutiveFailures: 0 }));
+  return targets.map((target) => ({ target, availability: PENDING_AVAILABILITY, lastCheckedMs: null }));
 }
 
 export function saveTargets(targets: Target[]): boolean { return saveJson(TARGETS_KEY, targets); }

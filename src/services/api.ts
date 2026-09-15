@@ -1,4 +1,14 @@
-import { isAvailability, targetKey, type CheckResponse, type HealthResponse, type Target } from "@/domain/types";
+import {
+  isAvailability,
+  targetKey,
+  type CheckGroup,
+  type CheckRequestV2,
+  type CheckResponse,
+  type CheckResponseV2,
+  type HealthResponse,
+  type Target,
+  type TargetState,
+} from "@/domain/types";
 
 export class ApiError extends Error {
   constructor(
@@ -59,27 +69,76 @@ export async function verifyAccessToken(token: string): Promise<{ ok: true }> {
   return value;
 }
 
-export async function checkTargets(targets: Target[], previousFailures: Record<string, number>, token: string, signal?: AbortSignal): Promise<CheckResponse> {
-  const value = await requestJson<CheckResponse>("/api/check", token, {
-    method: "POST", body: JSON.stringify({ targets, previousFailures }), signal,
+function groupTargets(targets: Target[]): CheckGroup[] {
+  const groups = new Map<string, CheckGroup>();
+  for (const target of targets) {
+    const key = `${target.locale}|${target.storeNumber}`;
+    const group = groups.get(key) ?? { locale: target.locale, storeNumber: target.storeNumber, items: [] };
+    group.items.push({ partNumber: target.partNumber });
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
+export async function checkTargets(targets: Target[], token: string, signal?: AbortSignal): Promise<CheckResponse> {
+  const request: CheckRequestV2 = { version: 2, groups: groupTargets(targets) };
+  const value = await requestJson<CheckResponseV2>("/api/check", token, {
+    method: "POST", body: JSON.stringify(request), signal,
   }, 55_000);
-  const requested = new Map(targets.map((target) => [targetKey(target), target]));
-  const seen = new Set<string>();
-  if (!Array.isArray(value.rows) || value.rows.length !== targets.length || !Number.isFinite(value.requestCount)) {
+  const requestedGroups = new Map<string, Map<string, Target>>();
+  for (const target of targets) {
+    const groupKey = `${target.locale}|${target.storeNumber}`;
+    const items = requestedGroups.get(groupKey) ?? new Map<string, Target>();
+    if (items.has(target.partNumber)) throw new ApiError(400, "duplicate_targets", "监控目标中存在重复项");
+    items.set(target.partNumber, target);
+    requestedGroups.set(groupKey, items);
+  }
+  if (value.version !== 2 || typeof value.healthy !== "boolean" || !Number.isFinite(value.checkedAt) ||
+    !Number.isInteger(value.requestCount) || value.requestCount < 0 || !Number.isFinite(value.retryAfterSeconds) ||
+    !Array.isArray(value.groups) || value.groups.length !== requestedGroups.size) {
     throw new ApiError(502, "invalid_response", "库存响应不完整");
   }
-  for (const row of value.rows) {
-    const key = row?.target ? targetKey(row.target) : "";
-    if (!requested.has(key) || seen.has(key) || !isAvailability(row.availability) ||
-      !Number.isFinite(row.lastCheckedMs) || !Number.isInteger(row.consecutiveFailures) || row.consecutiveFailures < 0) {
-      throw new ApiError(502, "invalid_response", "库存响应包含无效条目");
+  const seenGroups = new Set<string>();
+  const seenTargets = new Set<string>();
+  const rows: TargetState[] = [];
+  for (const rawGroup of value.groups as unknown[]) {
+    if (!rawGroup || typeof rawGroup !== "object" || Array.isArray(rawGroup)) {
+      throw new ApiError(502, "invalid_response", "库存响应包含无效分组");
     }
-    seen.add(key);
-    row.target = requested.get(key)!;
+    const group = rawGroup as Record<string, unknown>;
+    const groupKey = `${group.locale}|${group.storeNumber}`;
+    const requested = requestedGroups.get(groupKey);
+    if (typeof group.locale !== "string" || typeof group.storeNumber !== "string" ||
+      !requested || seenGroups.has(groupKey) || !Array.isArray(group.items)) {
+      throw new ApiError(502, "invalid_response", "库存响应包含无效分组");
+    }
+    seenGroups.add(groupKey);
+    for (const rawItem of group.items) {
+      if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) {
+        throw new ApiError(502, "invalid_response", "库存响应包含无效条目");
+      }
+      const item = rawItem as Record<string, unknown>;
+      const target = typeof item.partNumber === "string" ? requested.get(item.partNumber) : undefined;
+      const availability = item.availability;
+      const key = target ? targetKey(target) : "";
+      if (!target || seenTargets.has(key) || !isAvailability(availability) ||
+        (availability.kind === "unknown" && availability.reason === "not_yet_checked")) {
+        throw new ApiError(502, "invalid_response", "库存响应包含无效条目");
+      }
+      seenTargets.add(key);
+      rows.push({ target, availability, lastCheckedMs: value.checkedAt });
+    }
   }
-  value.retryAfterSeconds = Number.isFinite(value.retryAfterSeconds)
-    ? Math.max(0, Math.min(3600, value.retryAfterSeconds!)) : 0;
-  return value;
+  if (rows.length !== targets.length || value.healthy !== rows.every((row) => row.availability.kind !== "unknown")) {
+    throw new ApiError(502, "invalid_response", "库存响应不完整");
+  }
+  return {
+    healthy: value.healthy,
+    checkedAt: value.checkedAt,
+    requestCount: value.requestCount,
+    retryAfterSeconds: Math.max(0, Math.min(3600, value.retryAfterSeconds)),
+    rows,
+  };
 }
 
 export async function sendBark(input: { title: string; body: string; url: string }, token: string, signal?: AbortSignal): Promise<{ ok: true }> {

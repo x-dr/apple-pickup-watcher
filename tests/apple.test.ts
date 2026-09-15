@@ -4,10 +4,7 @@ function target(locale = "zh_CN") {
   return {
     locale,
     storeNumber: "R683",
-    storeTitle: "上海-环球港",
     partNumber: "MJTF4CH/A",
-    productName: "iPhone 18 Pro 512GB 冰川蓝色",
-    productUrl: "https://www.apple.com.cn/shop/buy-iphone",
   };
 }
 
@@ -37,7 +34,7 @@ describe("Apple 三态库存解析", () => {
       .mockResolvedValueOnce(new Response("bag", { status: 200, headers: { "set-cookie": "geo=CN; Path=/" } }))
       .mockResolvedValueOnce(new Response(appleResponse("available"), { status: 200, headers: { "content-type": "application/json" } }));
 
-    const result = await checkAppleTargets([target()], {}, fetchMock as typeof fetch);
+    const result = await checkAppleTargets([target()], fetchMock as typeof fetch);
 
     expect(result.healthy).toBe(true);
     expect(result.rows[0]?.availability).toEqual({ kind: "in_stock" });
@@ -50,7 +47,7 @@ describe("Apple 三态库存解析", () => {
       .mockResolvedValueOnce(new Response("bag", { status: 200 }))
       .mockResolvedValueOnce(new Response(appleResponse("maybe"), { status: 200, headers: { "content-type": "application/json" } }));
 
-    const result = await checkAppleTargets([target("zh_HK")], {}, fetchMock as typeof fetch);
+    const result = await checkAppleTargets([target("zh_HK")], fetchMock as typeof fetch);
 
     expect(result.healthy).toBe(false);
     expect(result.rows[0]?.availability).toMatchObject({
@@ -67,7 +64,7 @@ describe("Apple 三态库存解析", () => {
       .mockResolvedValueOnce(new Response("bag", { status: 200 }))
       .mockResolvedValueOnce(new Response("blocked", { status: 541 }));
 
-    const result = await checkAppleTargets([target("zh_TW")], {}, fetchMock as typeof fetch);
+    const result = await checkAppleTargets([target("zh_TW")], fetchMock as typeof fetch);
 
     expect(result.rows[0]?.availability).toMatchObject({ kind: "unknown", reason: "blocked" });
     expect(result.rows[0]?.availability.kind).not.toBe("out_of_stock");
@@ -83,7 +80,7 @@ describe("Apple 三态库存解析", () => {
       .mockResolvedValueOnce(new Response("bag", { status: 200 }))
       .mockResolvedValueOnce(new Response(body, { status: 200, headers: { "content-type": "application/json" } }));
 
-    const result = await checkAppleTargets([target("ja_JP")], {}, fetchMock as typeof fetch);
+    const result = await checkAppleTargets([target("ja_JP")], fetchMock as typeof fetch);
 
     expect(result.rows[0]?.availability).toMatchObject({ kind: "unknown", reason: "schema_drift" });
   });

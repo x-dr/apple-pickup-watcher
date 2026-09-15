@@ -39,9 +39,17 @@ describe("缓存和存储恢复", () => {
   it("清理无效字段、重复目标和过多门店，保留有效数据", () => {
     saved.set("apw:web:settings:v1", JSON.stringify({ locale: "invalid", intervalSeconds: 1, barkEnabled: "true" }));
     expect(loadSettings()).toMatchObject({ locale: "zh_CN", intervalSeconds: 60, barkEnabled: false });
-    saved.set("apw:web:targets:v1", JSON.stringify([{}, null, target, target, ...Array.from({ length: 8 }, (_, index) => ({ ...target, storeNumber: `R10${index}` }))]));
+    saved.set("apw:web:targets:v1", JSON.stringify([
+      {},
+      null,
+      target,
+      target,
+      { ...target, partNumber: "CASE/A", productName: "Apple Watch", companionPart: "BAND/A" },
+      ...Array.from({ length: 8 }, (_, index) => ({ ...target, storeNumber: `R10${index}` })),
+    ]));
     expect(loadTargetStates()).toHaveLength(6);
     expect(loadTargetStates()[0]?.target).toEqual(target);
+    expect(loadTargetStates().some((row) => row.target.partNumber === "CASE/A")).toBe(false);
   });
 
   it("浏览器禁用存储时返回失败信息，不使页面崩溃", () => {
@@ -59,14 +67,56 @@ describe("缓存和存储恢复", () => {
 });
 
 describe("前端 API 边界", () => {
+  it("发送精简分组请求，并把结果重新关联到本地展示数据", async () => {
+    const mock = vi.fn().mockResolvedValue(Response.json({
+      version: 2,
+      healthy: true,
+      checkedAt: 1_789_520_000_000,
+      requestCount: 1,
+      retryAfterSeconds: 0,
+      groups: [{
+        locale: "zh_CN",
+        storeNumber: "R683",
+        items: [{ partNumber: "AAA/A", availability: { kind: "in_stock" } }],
+      }],
+    }));
+    vi.stubGlobal("fetch", mock);
+
+    const result = await checkTargets([target], "");
+    const body = JSON.parse(String(mock.mock.calls[0]![1]!.body));
+
+    expect(body).toEqual({
+      version: 2,
+      groups: [{ locale: "zh_CN", storeNumber: "R683", items: [{ partNumber: "AAA/A" }] }],
+    });
+    expect(JSON.stringify(body)).not.toContain("productName");
+    expect(result.rows[0]?.target).toBe(target);
+    expect(result.rows[0]?.lastCheckedMs).toBe(1_789_520_000_000);
+  });
+
   it("拒绝库存成功响应中的缺失或非法条目", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ rows: [], requestCount: 1 })));
-    await expect(checkTargets([target], {}, "")).rejects.toThrow("不完整");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
+      version: 2, healthy: true, checkedAt: Date.now(), requestCount: 1, retryAfterSeconds: 0, groups: [],
+    })));
+    await expect(checkTargets([target], "")).rejects.toThrow("不完整");
+  });
+
+  it("拒绝 v2 响应中的重复结果", async () => {
+    const item = { partNumber: "AAA/A", availability: { kind: "in_stock" } };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
+      version: 2,
+      healthy: true,
+      checkedAt: Date.now(),
+      requestCount: 1,
+      retryAfterSeconds: 0,
+      groups: [{ locale: "zh_CN", storeNumber: "R683", items: [item, item] }],
+    })));
+    await expect(checkTargets([target], "")).rejects.toThrow("无效条目");
   });
 
   it("读取 429 的 Retry-After", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ message: "retry" }, { status: 429, headers: { "retry-after": "120" } })));
-    await expect(checkTargets([target], {}, "")).rejects.toMatchObject({ status: 429, retryAfterSeconds: 120 });
+    await expect(checkTargets([target], "")).rejects.toMatchObject({ status: 429, retryAfterSeconds: 120 });
   });
 
   it("健康检查收到响应头后仍受超时保护", async () => {

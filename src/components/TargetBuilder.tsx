@@ -40,8 +40,7 @@ function buildTarget(locale: string, store: Store, product: Product): Target {
     storeTitle: store.title,
     partNumber: product.partNumber,
     productName: product.title,
-    productUrl: productUrl(locale, product.partNumber, product.companionPart),
-    ...(product.companionPart ? { companionPart: product.companionPart } : {}),
+    productUrl: productUrl(locale, product.partNumber),
   };
 }
 

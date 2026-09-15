@@ -11,10 +11,4 @@ describe("Apple 商品链接", () => {
       "https://www.apple.com/tw/shop/product/MDWK4TA/A",
     );
   });
-
-  it("按表壳和表带打开对应的 Apple Watch 配置", () => {
-    expect(productUrl("en_SG", "MJCR4X/A", "MKDY4FE/A")).toBe(
-      "https://www.apple.com/sg/shop/buy-watch?option.watch_cases=MJCR4X%2FA&option.watch_bands=MKDY4FE%2FA",
-    );
-  });
 });

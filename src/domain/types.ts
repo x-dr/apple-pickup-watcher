@@ -1,4 +1,4 @@
-export type Category = "iphone" | "ipad" | "mac" | "watch";
+export type Category = "iphone" | "ipad" | "mac";
 
 export type UnknownReason =
   | { reason: "not_yet_checked" }
@@ -32,7 +32,6 @@ export interface Product {
   capacity: string;
   color: string;
   title: string;
-  companionPart?: string;
 }
 
 export interface CatalogPayload {
@@ -50,14 +49,12 @@ export interface Target {
   partNumber: string;
   productName: string;
   productUrl: string;
-  companionPart?: string;
 }
 
 export interface TargetState {
   target: Target;
   availability: Availability;
   lastCheckedMs: number | null;
-  consecutiveFailures: number;
   lastConfirmed?: { kind: "in_stock" | "out_of_stock"; checkedAt: number };
 }
 
@@ -70,12 +67,48 @@ export interface Settings {
   openProductOnHit: boolean;
 }
 
+export interface CheckItem {
+  partNumber: string;
+}
+
+export interface CheckGroup {
+  locale: string;
+  storeNumber: string;
+  items: CheckItem[];
+}
+
+export interface CheckRequestV2 {
+  version: 2;
+  groups: CheckGroup[];
+}
+
+export interface CheckResultItem {
+  partNumber: string;
+  availability: Availability;
+}
+
+export interface CheckResultGroup {
+  locale: string;
+  storeNumber: string;
+  items: CheckResultItem[];
+}
+
+export interface CheckResponseV2 {
+  version: 2;
+  healthy: boolean;
+  checkedAt: number;
+  requestCount: number;
+  retryAfterSeconds: number;
+  groups: CheckResultGroup[];
+}
+
+/** Client-side result after v2 response rows are rejoined with local UI metadata. */
 export interface CheckResponse {
   healthy: boolean;
   checkedAt: number;
   requestCount: number;
   rows: TargetState[];
-  retryAfterSeconds?: number;
+  retryAfterSeconds: number;
 }
 
 export interface HealthResponse {
@@ -99,7 +132,6 @@ export const CATEGORY_OPTIONS: Array<{ value: Category; label: string }> = [
   { value: "iphone", label: "iPhone" },
   { value: "ipad", label: "iPad" },
   { value: "mac", label: "Mac" },
-  { value: "watch", label: "Apple Watch" },
 ];
 
 export const QUERY_INTERVAL_OPTIONS = [5, 10, 15, 30, 60] as const;
@@ -170,13 +202,7 @@ function pathPart(partNumber: string): string {
   return partNumber.trim().split("/").map(encodeURIComponent).join("/");
 }
 
-export function productUrl(locale: string, partNumber: string, companionPart?: string): string {
+export function productUrl(locale: string, partNumber: string): string {
   const region = REGIONS.find((item) => item.locale === locale) ?? REGIONS[0]!;
-  if (companionPart) {
-    const url = new URL(`${region.baseUrl}/shop/buy-watch`);
-    url.searchParams.set("option.watch_cases", partNumber.trim());
-    url.searchParams.set("option.watch_bands", companionPart.trim());
-    return url.toString();
-  }
   return `${region.baseUrl}/shop/product/${pathPart(partNumber)}`;
 }

@@ -14,7 +14,7 @@ vi.mock("../src/services/notifications", () => ({ ensureNotificationPermission: 
 const target = (partNumber = "AAA/A"): Target => ({ locale: "zh_CN", storeNumber: "R683", storeTitle: "测试门店", partNumber, productName: partNumber, productUrl: `https://www.apple.com.cn/shop/product/${partNumber}` });
 function response(targets: Target[], availability: Availability = { kind: "in_stock" }, retryAfterSeconds = 0): CheckResponse {
   return { healthy: availability.kind !== "unknown", checkedAt: Date.now(), requestCount: 1, retryAfterSeconds,
-    rows: targets.map((target) => ({ target: { ...target }, availability, lastCheckedMs: Date.now(), consecutiveFailures: availability.kind === "unknown" ? 1 : 0 })) };
+    rows: targets.map((target) => ({ target: { ...target }, availability, lastCheckedMs: Date.now() })) };
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -106,7 +106,7 @@ describe("监控状态与通知", () => {
     await add(); const old = deferred<CheckResponse>(); const fresh = deferred<CheckResponse>();
     vi.mocked(checkTargets).mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise);
     await act(async () => model.setRunning(true));
-    const oldSignal = vi.mocked(checkTargets).mock.calls[0]![3]!;
+    const oldSignal = vi.mocked(checkTargets).mock.calls[0]![2]!;
     await act(async () => { model.setRunning(false); model.setRunning(true); });
     expect(oldSignal.aborted).toBe(true);
     await act(async () => { old.resolve(response([target()])); });

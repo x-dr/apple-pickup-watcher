@@ -119,7 +119,7 @@ export function useWatcher() {
       const storeKey = `${target.locale}|${target.storeNumber}`;
       if (next.length >= 24) break;
       if (keys.has(key) || (groups.size >= 6 && !groups.has(storeKey))) continue;
-      next.push({ target: { ...target }, availability: { kind: "unknown", reason: "not_yet_checked" }, lastCheckedMs: null, consecutiveFailures: 0 });
+      next.push({ target: { ...target }, availability: { kind: "unknown", reason: "not_yet_checked" }, lastCheckedMs: null });
       keys.add(key);
       groups.add(storeKey);
       added.push(target);
@@ -156,7 +156,7 @@ export function useWatcher() {
     const snapshot = rowsRef.current;
     let retrySeconds = 0;
     try {
-      const response = await checkTargets(snapshot.map((row) => row.target), Object.fromEntries(snapshot.map((row) => [targetKey(row.target), row.consecutiveFailures])), contextRef.current.accessToken, controller.signal);
+      const response = await checkTargets(snapshot.map((row) => row.target), contextRef.current.accessToken, controller.signal);
       if (controller.signal.aborted || activeRequest.current !== controller || !mounted.current) return;
       const next = mergeQueryRows(rowsRef.current, snapshot, response.rows);
       replaceRows(next);

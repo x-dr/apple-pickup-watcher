@@ -16,7 +16,7 @@ export function mergeQueryRows(current: TargetState[], snapshot: TargetState[], 
 }
 
 export function failedQueryRows(snapshot: TargetState[], availability: Availability): TargetState[] {
-  return snapshot.map((row) => ({ ...row, availability, lastCheckedMs: Date.now(), consecutiveFailures: row.consecutiveFailures + 1 }));
+  return snapshot.map((row) => ({ ...row, availability, lastCheckedMs: Date.now() }));
 }
 
 export function checkDelay(intervalSeconds: number, failures: number, retryAfterSeconds = 0): number {

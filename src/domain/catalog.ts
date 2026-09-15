@@ -17,7 +17,7 @@ export function loadCatalog(locale: string): Promise<CatalogPayload> {
         !Number.isFinite(Date.parse(value.generatedAt)) || typeof value.sourceCommit !== "string" ||
         !value.stores.every((store) => store && [store.number, store.name, store.title].every((field) => typeof field === "string")) ||
         !value.products.every((product) => product && [product.partNumber, product.family, product.capacity, product.color, product.title].every((field) => typeof field === "string") &&
-          ["iphone", "ipad", "mac", "watch"].includes(product.category) && (product.companionPart === undefined || typeof product.companionPart === "string"))) {
+          ["iphone", "ipad", "mac"].includes(product.category))) {
         throw new Error("目录数据格式或地区不正确");
       }
       return value;

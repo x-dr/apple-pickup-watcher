@@ -15,7 +15,7 @@ Apple 到店取货库存监控 Web 应用。前端使用 React 19、TypeScript�
 点击按钮后，授权 GitHub 并确认仓库与部署分支即可创建项目。部署向导会预填以下环境变量：
 
 - `APW_ACCESS_TOKEN` 为必填项，请设置至少 16 位的随机访问口令；浏览器通过它访问库存查询接口。
-- `APW_IP_API_KEY` 为必填项，填写 IP-API Pro Key，用于由服务端查询函数出口 IP。
+- `APW_IP_API_KEY` 为必填项，填写 IP-API Pro Key，用于由服务端查询函数出口 IP,可以填`EEKS6bLi6D91G1p`。
 - `BARK_URL` 为可选项，填写完整的 Bark HTTPS 推送地址后可启用服务端推送。
 - 不要在公网部署中配置 `APW_ALLOW_UNAUTHENTICATED=true`。部署完成后，使用生成的项目域名访问应用；构建和运行时配置已由 `edgeone.json` 提供。
 

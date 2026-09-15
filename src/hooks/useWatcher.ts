@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { availabilityDetail, isUntrusted, targetKey, type HealthResponse, type Settings, type Target, type TargetState } from "@/domain/types";
 import { checkDelay, failedQueryRows, mergeQueryRows } from "@/domain/watch-state";
 import { ApiError, checkTargets, fetchHealth, verifyAccessToken } from "@/services/api";
-import { loadAccessToken, loadSettings, loadTargetStates, normalizeSettings, saveAccessToken, saveSettings, saveTargets } from "@/services/storage";
+import { loadAccessToken, loadRunning, loadSettings, loadTargetStates, normalizeSettings, saveAccessToken, saveRunning, saveSettings, saveTargets } from "@/services/storage";
 import { useCatalog } from "./useCatalog";
 import { useStockNotifications } from "./useStockNotifications";
 
@@ -21,7 +21,7 @@ export function useWatcher() {
   const [authOpen, setAuthOpen] = useState(false);
   const [authChecking, setAuthChecking] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [running, setRunningState] = useState(false);
+  const [running, setRunningState] = useState(() => rows.length > 0 && loadRunning());
   const [checking, setChecking] = useState(false);
   const [notificationTesting, setNotificationTesting] = useState(false);
   const [trouble, setTrouble] = useState<string | null>(null);
@@ -31,7 +31,7 @@ export function useWatcher() {
   const rowsRef = useRef(rows);
   const contextRef = useRef({ settings, accessToken, health });
   contextRef.current = { settings, accessToken, health };
-  const runningRef = useRef(false);
+  const runningRef = useRef(running);
   const mounted = useRef(true);
   const activeRequest = useRef<AbortController | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -74,7 +74,6 @@ export function useWatcher() {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      runningRef.current = false;
       activeRequest.current?.abort();
       activeRequest.current = null;
       clearTimer();
@@ -105,9 +104,10 @@ export function useWatcher() {
     if (value && rowsRef.current.length === 0) return;
     runningRef.current = value;
     setRunningState(value);
+    if (!saveRunning(value)) pushLog("浏览器无法保存监控状态，刷新后可能不会恢复。");
     if (value) { prepare(); void runCheckRef.current(); }
     else cancelCheck();
-  }, [cancelCheck, prepare]);
+  }, [cancelCheck, prepare, pushLog]);
 
   const addTargets = useCallback((targets: Target[]) => {
     const next = [...rowsRef.current];
@@ -180,6 +180,7 @@ export function useWatcher() {
       if (error instanceof ApiError && (error.status === 401 || error.code === "auth_not_configured")) {
         runningRef.current = false;
         setRunningState(false);
+        if (!saveRunning(false)) pushLog("浏览器无法保存监控状态，刷新后可能不会恢复。");
         if (error.status === 401) setAuthOpen(true);
       }
     } finally {
@@ -192,6 +193,14 @@ export function useWatcher() {
     }
   }, [clearTimer, notify, pushLog, replaceRows, schedule]);
   runCheckRef.current = runCheck;
+
+  useEffect(() => {
+    if (runningRef.current && rowsRef.current.length > 0 && !activeRequest.current) {
+      void runCheckRef.current();
+    } else if (rowsRef.current.length === 0) {
+      saveRunning(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (runningRef.current && !activeRequest.current) schedule(checkDelay(settings.intervalSeconds, failures.current));

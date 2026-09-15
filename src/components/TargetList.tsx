@@ -60,7 +60,7 @@ export function TargetList({ rows, checking, nextCheckAt, onRemove }: Props) {
         <>
           {!mobile ? <div className="desktop-targets">
             <Suspense fallback={<Skeleton active paragraph={{ rows: 2 }} />}>
-              <DesktopTargetTable rows={rows} checking={checking} onRemove={onRemove} />
+              <DesktopTargetTable rows={rows} onRemove={onRemove} />
             </Suspense>
           </div> :
           <div className="mobile-targets" aria-busy={checking}>

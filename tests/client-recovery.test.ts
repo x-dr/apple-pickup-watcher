@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadAccessToken, loadSettings, loadTargetStates, saveAccessToken, saveSettings, DEFAULT_SETTINGS } from "../src/services/storage";
+import { loadAccessToken, loadRunning, loadSettings, loadTargetStates, saveAccessToken, saveRunning, saveSettings, DEFAULT_SETTINGS } from "../src/services/storage";
 import { checkTargets, fetchHealth } from "../src/services/api";
 
 const target = { locale: "zh_CN", storeNumber: "R683", storeTitle: "测试门店", partNumber: "AAA/A", productName: "iPhone", productUrl: "https://www.apple.com.cn/shop/product/AAA/A" };
@@ -47,8 +47,14 @@ describe("缓存和存储恢复", () => {
   it("浏览器禁用存储时返回失败信息，不使页面崩溃", () => {
     const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); }, removeItem() { throw new Error("blocked"); } };
     vi.stubGlobal("localStorage", blocked); vi.stubGlobal("sessionStorage", blocked);
-    expect(loadSettings()).toEqual(DEFAULT_SETTINGS); expect(loadAccessToken()).toBe("");
-    expect(saveSettings(DEFAULT_SETTINGS)).toBe(false); expect(saveAccessToken("fixture")).toBe(false);
+    expect(loadSettings()).toEqual(DEFAULT_SETTINGS); expect(loadAccessToken()).toBe(""); expect(loadRunning()).toBe(false);
+    expect(saveSettings(DEFAULT_SETTINGS)).toBe(false); expect(saveAccessToken("fixture")).toBe(false); expect(saveRunning(true)).toBe(false);
+  });
+
+  it("在当前标签页保存并恢复监控状态", () => {
+    expect(loadRunning()).toBe(false);
+    expect(saveRunning(true)).toBe(true); expect(loadRunning()).toBe(true);
+    expect(saveRunning(false)).toBe(true); expect(loadRunning()).toBe(false);
   });
 });
 

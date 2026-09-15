@@ -3,9 +3,9 @@ import { Button, Table, type TableProps } from "antd";
 import { formatCheckedTime, targetKey, type TargetState } from "@/domain/types";
 import { StatusTag, historyDetail } from "./TargetStatus";
 
-interface Props { rows: TargetState[]; checking: boolean; onRemove(key: string): void }
+interface Props { rows: TargetState[]; onRemove(key: string): void }
 
-export default function DesktopTargetTable({ rows, checking, onRemove }: Props) {
+export default function DesktopTargetTable({ rows, onRemove }: Props) {
   const columns: TableProps<TargetState>["columns"] = [
     {
       title: "状态",
@@ -52,5 +52,5 @@ export default function DesktopTargetTable({ rows, checking, onRemove }: Props) 
   ];
 
   return <Table<TargetState> rowKey={(row) => targetKey(row.target)} columns={columns} dataSource={rows}
-    pagination={false} loading={checking} tableLayout="fixed" size="middle" />;
+    pagination={false} tableLayout="fixed" size="middle" />;
 }

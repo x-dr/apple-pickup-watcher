@@ -156,5 +156,19 @@ describe("监控状态与通知", () => {
     await add(); vi.mocked(checkTargets).mockRejectedValueOnce(new ApiError(401, "unauthorized", "口令无效"));
     await act(async () => model.setRunning(true));
     expect(model.running).toBe(false); expect(model.authOpen).toBe(true); expect(model.nextCheckAt).toBeNull();
+    expect(sessionStorage.getItem("apw:web:running")).toBeNull();
+  });
+
+  it("刷新页面后恢复监控并立即继续查询", async () => {
+    await add();
+    await act(async () => model.setRunning(true));
+    expect(sessionStorage.getItem("apw:web:running")).toBe("1");
+    expect(checkTargets).toHaveBeenCalledTimes(1);
+
+    await act(async () => root.unmount()); container.remove();
+    await mount();
+
+    expect(model.running).toBe(true);
+    expect(checkTargets).toHaveBeenCalledTimes(2);
   });
 });

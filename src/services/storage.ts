@@ -3,6 +3,7 @@ import { PENDING_AVAILABILITY, QUERY_INTERVAL_OPTIONS, REGIONS, productUrl, targ
 const SETTINGS_KEY = "apw:web:settings:v1";
 const TARGETS_KEY = "apw:web:targets:v1";
 const TOKEN_KEY = "apw:web:access-token";
+const RUNNING_KEY = "apw:web:running";
 
 export const DEFAULT_SETTINGS: Settings = {
   locale: "zh_CN", intervalSeconds: 60, browserNotifications: true,
@@ -66,6 +67,16 @@ export function loadTargetStates(): TargetState[] {
 }
 
 export function saveTargets(targets: Target[]): boolean { return saveJson(TARGETS_KEY, targets); }
+export function loadRunning(): boolean {
+  try { return sessionStorage.getItem(RUNNING_KEY) === "1"; } catch { return false; }
+}
+export function saveRunning(running: boolean): boolean {
+  try {
+    if (running) sessionStorage.setItem(RUNNING_KEY, "1");
+    else sessionStorage.removeItem(RUNNING_KEY);
+    return true;
+  } catch { return false; }
+}
 export function loadAccessToken(): string {
   try { return sessionStorage.getItem(TOKEN_KEY) ?? ""; } catch { return ""; }
 }

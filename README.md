@@ -1,13 +1,13 @@
 # Apple Pickup Watcher Web
 
-Apple 到店取货库存监控 Web 应用。前端使用 React 19、TypeScript、Vite 和 Ant Design 6，服务端通过 EdgeOne Makers Cloud Functions 查询 Apple 到店取货接口，并可发送浏览器通知、提示音和 Bark 推送。
+Apple 到店取货库存监控 Web 应用。前端使用 React 19、TypeScript、Vite 和 Ant Design 6，服务端通过 EdgeOne Makers Cloud Functions 查询 Apple 到店取货接口，并可发送浏览器通知、提示音，以及 Bark 或 NotifyHub 推送。
 
 > 本项目基于 [ENCHIGO/apple-pickup-watcher](https://github.com/ENCHIGO/apple-pickup-watcher) 重新实现，当前仓库为 [x-dr/apple-pickup-watcher](https://github.com/x-dr/apple-pickup-watcher)。
 
 ## 一键部署到 EdgeOne Pages
 
 <p align="center">
-	<a href="https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fx-dr%2Fapple-pickup-watcher&env=BARK_URL%2CAPW_ACCESS_TOKEN%2CAPW_IP_API_KEY">
+	<a href="https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fx-dr%2Fapple-pickup-watcher&env=BARK_URL%2CNOTIFYHUB_WEBHOOK_URL%2CNOTIFYHUB_TOKEN%2CAPW_ACCESS_TOKEN%2CAPW_IP_API_KEY">
 		<img src="https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg" alt="使用 EdgeOne Pages 部署">
 	</a>
 </p>
@@ -16,7 +16,7 @@ Apple 到店取货库存监控 Web 应用。前端使用 React 19、TypeScript�
 
 - `APW_ACCESS_TOKEN` 为必填项，请设置至少 16 位的随机访问口令；浏览器通过它访问库存查询接口。
 - `APW_IP_API_KEY` 为必填项，填写 IP-API Pro Key，用于由服务端查询函数出口 IP,可以填`EEKS6bLi6D91G1p`。
-- `BARK_URL` 为可选项，填写完整的 Bark HTTPS 推送地址后可启用服务端推送。
+- 服务端通知可选 Bark 或 NotifyHub：填写 `BARK_URL`，或同时填写 `NOTIFYHUB_WEBHOOK_URL` 和 `NOTIFYHUB_TOKEN`。两种渠道只能选择一个，不要同时配置。
 - 不要在公网部署中配置 `APW_ALLOW_UNAUTHENTICATED=true`。部署完成后，使用生成的项目域名访问应用；构建和运行时配置已由 `edgeone.json` 提供。
 
 需要配置自动部署、预览环境或查看完整验证流程，请继续阅读[通过 Git 部署到 EdgeOne Makers](#通过-git-部署到-edgeone-makers)。
@@ -30,7 +30,7 @@ Apple 到店取货库存监控 Web 应用。前端使用 React 19、TypeScript�
 - 同一门店的多个型号合并查询，每轮最多监控 24 项、6 家门店。
 - 库存查询仅接受精简的 v2 分组协议，商品名、门店名和跳转链接只保留在浏览器端；旧版请求会被拒绝。
 - 严格区分有货、无货、未知和待查询；拦截、限流、网络失败或接口结构异常不会被误判为无货。
-- 支持浏览器通知、提示音、可选 Bark 服务端推送，以及有货时打开 Apple 商品页。
+- 支持浏览器通知、提示音、Bark / NotifyHub 二选一的服务端推送，以及有货时打开 Apple 商品页。
 - 可按需查看本次请求的客户 IP，以及函数实例的出口 IP、位置和网络信息。
 - 通知失败会在后续确认有货时重试；明确无货后再次有货会重新提醒。
 - 监控目标和设置保存在 `localStorage`；访问口令和运行状态仅保存在当前标签页的 `sessionStorage`。
@@ -60,7 +60,7 @@ EdgeOne Makers Cloud Functions 是按请求运行的 Serverless 服务，持续�
 
 ```text
 .
-├── cloud-functions/api/   # 健康检查、鉴权、库存查询和 Bark 推送接口
+├── cloud-functions/api/   # 健康检查、鉴权、库存查询和服务端推送接口
 ├── public/catalog/        # 各地区门店和商品目录快照
 ├── scripts/               # 上游目录导入工具
 ├── src/                   # React 前端
@@ -91,14 +91,19 @@ cp .env.example .env
 APW_ACCESS_TOKEN=请替换为至少16位的随机访问口令
 APW_IP_API_KEY=请替换为你的IP-API-Pro-Key
 
-# 可选：完整的 Bark 推送地址，仅由服务端读取
+# 可选渠道一：完整的 Bark 推送地址，仅由服务端读取
 # BARK_URL=https://api.day.app/你的BarkKey
+
+# 可选渠道二：NotifyHub Webhook 与 Token，必须同时填写
+# 不要与 BARK_URL 同时配置
+# NOTIFYHUB_WEBHOOK_URL=https://notifyhub.example.com/api/v1/hooks/01ARZ3NDEKTSV4RRFFQ69G5FAV
+# NOTIFYHUB_TOKEN=请替换为你的NotifyHubToken
 
 # 仅限本机临时调试，公网环境不要开启
 # APW_ALLOW_UNAUTHENTICATED=true
 ```
 
-`.env`、`.env.*`、`.edgeone/` 和 `dist/` 已被 Git 忽略。不要把访问口令、IP-API Key、Bark Key 或 EdgeOne API Token 提交到仓库。
+`.env`、`.env.*`、`.edgeone/` 和 `dist/` 已被 Git 忽略。不要把访问口令、IP-API Key、Bark Key、NotifyHub Token 或 EdgeOne API Token 提交到仓库。
 
 ### 3. 启动完整开发环境
 
@@ -108,7 +113,7 @@ edgeone login
 npm run dev:makers
 ```
 
-访问 `http://localhost:8088/`。`npm run dev` 只启动 Vite 前端，不会模拟 Cloud Functions，因此库存查询和 Bark 接口不可用。
+访问 `http://localhost:8088/`。`npm run dev` 只启动 Vite 前端，不会模拟 Cloud Functions，因此库存查询和服务端通知接口不可用。
 
 ## Git 仓库关联
 
@@ -181,10 +186,12 @@ Cloud Functions 位于 `cloud-functions/api/`，部署后会生成同源的 `/ap
 | --- | --- | --- |
 | `APW_ACCESS_TOKEN` | 是 | 至少 16 位，浏览器访问接口时使用 |
 | `APW_IP_API_KEY` | 是 | IP-API Pro Key，仅由服务端用于查询函数出口 IP |
-| `BARK_URL` | 否 | 完整 Bark HTTPS 推送地址，仅服务端读取 |
+| `BARK_URL` | 否 | 通知渠道一：完整 Bark HTTPS 推送地址，仅服务端读取 |
+| `NOTIFYHUB_WEBHOOK_URL` | 否 | 通知渠道二：`/api/v1/hooks/<接入点ID>` Webhook 地址，需与 Token 同时配置 |
+| `NOTIFYHUB_TOKEN` | 否 | NotifyHub Webhook 的 Bearer Token，仅服务端读取 |
 | `APW_ALLOW_UNAUTHENTICATED` | 否 | 仅本地调试可设为 `true`，公网不要配置 |
 
-环境变量修改只会作用于新的部署。修改后请在控制台重新部署，或推送一次新提交。
+`BARK_URL` 与 NotifyHub 两项配置只能二选一；两套同时存在或 NotifyHub 只填写一项时，通知会失败关闭。环境变量修改只会作用于新的部署。修改后请在控制台重新部署，或推送一次新提交。
 
 ### 4. 首次部署与后续发布
 
@@ -206,7 +213,7 @@ git push origin main
 curl https://你的域名/api/health
 ```
 
-正常响应应包含 `"ok":true`，并且 `authConfigured` 应为 `true`。如启用了 Bark，`barkConfigured` 也应为 `true`。
+正常响应应包含 `"ok":true`，并且 `authConfigured` 应为 `true`。如配置了服务端通知，`notificationProvider` 应为 `"bark"` 或 `"notifyhub"`；未配置或配置冲突时为 `null`。
 
 再验证访问口令；以下变量只保存在当前终端，不要把真实口令写入脚本或提交到 Git：
 

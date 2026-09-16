@@ -37,8 +37,8 @@ describe("缓存和存储恢复", () => {
   });
 
   it("清理无效字段、重复目标和过多门店，保留有效数据", () => {
-    saved.set("apw:web:settings:v1", JSON.stringify({ locale: "invalid", intervalSeconds: 1, barkEnabled: "true" }));
-    expect(loadSettings()).toMatchObject({ locale: "zh_CN", intervalSeconds: 60, barkEnabled: false });
+    saved.set("apw:web:settings:v1", JSON.stringify({ locale: "invalid", intervalSeconds: 1, notificationEnabled: "true" }));
+    expect(loadSettings()).toMatchObject({ locale: "zh_CN", intervalSeconds: 60, notificationEnabled: false });
     saved.set("apw:web:targets:v1", JSON.stringify([
       {},
       null,
@@ -50,6 +50,11 @@ describe("缓存和存储恢复", () => {
     expect(loadTargetStates()).toHaveLength(6);
     expect(loadTargetStates()[0]?.target).toEqual(target);
     expect(loadTargetStates().some((row) => row.target.partNumber === "CASE/A")).toBe(false);
+  });
+
+  it("把旧版 Bark 开关迁移成通用通知开关", () => {
+    saved.set("apw:web:settings:v1", JSON.stringify({ barkEnabled: true }));
+    expect(loadSettings().notificationEnabled).toBe(true);
   });
 
   it("浏览器禁用存储时返回失败信息，不使页面崩溃", () => {

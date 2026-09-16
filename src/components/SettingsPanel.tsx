@@ -15,12 +15,13 @@ interface Props {
 }
 
 export function SettingsPanel({ settings, health, checking, canCheck, testing, onChange, onCheck, onTest }: Props) {
+  const notificationName = health?.notificationProvider === "bark" ? "Bark" : health?.notificationProvider === "notifyhub" ? "NotifyHub" : null;
   return (
     <section className="panel settings-panel">
       <div className="section-heading compact">
         <div><span className="eyebrow">STEP 02</span><h2>查询与提醒</h2></div>
-        <Tooltip title={health?.barkConfigured ? "Bark 已在服务端配置" : "未配置 BARK_URL"}>
-          <SafetyCertificateOutlined className={health?.barkConfigured ? "configured" : "muted-icon"} />
+        <Tooltip title={notificationName ? `${notificationName} 已在服务端配置` : "通知未配置，或 Bark / NotifyHub 配置冲突"}>
+          <SafetyCertificateOutlined className={notificationName ? "configured" : "muted-icon"} />
         </Tooltip>
       </div>
       <div className="setting-row">
@@ -41,11 +42,11 @@ export function SettingsPanel({ settings, health, checking, canCheck, testing, o
         <Switch checked={settings.soundEnabled} onChange={(checked) => onChange({ soundEnabled: checked })} />
       </div>
       <div className="setting-row">
-        <div><strong>Bark 推送</strong><span>地址仅从云端环境变量读取</span></div>
+        <div><strong>是否开启通知</strong><span>{notificationName ? `当前使用 ${notificationName}` : "服务端需配置 Bark 或 NotifyHub（二选一）"}</span></div>
         <Switch
-          checked={settings.barkEnabled}
-          disabled={!health?.barkConfigured}
-          onChange={(checked) => onChange({ barkEnabled: checked })}
+          checked={settings.notificationEnabled}
+          disabled={!notificationName}
+          onChange={(notificationEnabled) => onChange({ notificationEnabled })}
         />
       </div>
       <div className="setting-row">

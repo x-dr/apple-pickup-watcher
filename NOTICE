@@ -26,7 +26,8 @@ NOTICE — 来源、版权与修改声明
 
     2026-09-15  将 Rust + Tauri 桌面应用重新实现为 Node.js/TypeScript、React 与
                 Ant Design 的 Web 应用；增加 EdgeOne Makers 云函数适配、Bearer
-                访问口令、浏览器端设置存储、响应式布局及服务端 Bark 配置；保留
+                访问口令、浏览器端设置存储、响应式布局及 Bark / NotifyHub 服务端
+                通知配置；保留
                 上游的三态库存语义、Apple 接口、地区范围和目录数据。
 
 本项目内 `public/catalog/*.json` 是从上游 `crates/apw-core/data/` 的门店与商品

@@ -7,7 +7,7 @@ const RUNNING_KEY = "apw:web:running";
 
 export const DEFAULT_SETTINGS: Settings = {
   locale: "zh_CN", intervalSeconds: 60, browserNotifications: true,
-  soundEnabled: true, barkEnabled: false, openProductOnHit: false,
+  soundEnabled: true, notificationEnabled: false, openProductOnHit: false,
 };
 
 function readJson(key: string): unknown {
@@ -23,9 +23,10 @@ export function normalizeSettings(value: unknown): Settings {
   if (typeof seconds === "number" && QUERY_INTERVAL_OPTIONS.some((option) => option === seconds)) {
     result.intervalSeconds = seconds;
   }
-  for (const key of ["browserNotifications", "soundEnabled", "barkEnabled", "openProductOnHit"] as const) {
+  for (const key of ["browserNotifications", "soundEnabled", "notificationEnabled", "openProductOnHit"] as const) {
     if (typeof saved[key] === "boolean") result[key] = saved[key];
   }
+  if (typeof saved.notificationEnabled !== "boolean" && saved.barkEnabled === true) result.notificationEnabled = true;
   return result;
 }
 

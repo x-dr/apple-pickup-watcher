@@ -63,9 +63,11 @@ export interface Settings {
   intervalSeconds: number;
   browserNotifications: boolean;
   soundEnabled: boolean;
-  barkEnabled: boolean;
+  notificationEnabled: boolean;
   openProductOnHit: boolean;
 }
+
+export type NotificationProvider = "bark" | "notifyhub";
 
 export interface CheckItem {
   partNumber: string;
@@ -114,7 +116,7 @@ export interface CheckResponse {
 export interface HealthResponse {
   ok: true;
   authConfigured: boolean;
-  barkConfigured: boolean;
+  notificationProvider: NotificationProvider | null;
   runtime: string;
 }
 

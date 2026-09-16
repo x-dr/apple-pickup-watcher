@@ -7,7 +7,7 @@ import {
   type MakersContext,
 } from "./_shared/context";
 import { retryAfter } from "./_shared/rate-limit";
-import { readResponseText, withResponse } from "./_shared/http";
+import { sendNotification } from "./_shared/notification";
 
 function shortText(value: unknown, name: string, max: number): string {
   if (typeof value !== "string" || !value.trim() || value.length > max) {
@@ -16,13 +16,22 @@ function shortText(value: unknown, name: string, max: number): string {
   return value.trim();
 }
 
+function eventIdentity(input: Record<string, unknown>): { eventId: string; occurredAt: string } {
+  const fallback = {
+    eventId: `apple-pickup-${crypto.randomUUID().replaceAll("-", "")}`,
+    occurredAt: new Date().toISOString(),
+  };
+  if (input.eventId === undefined && input.occurredAt === undefined) return fallback;
+  if (typeof input.eventId !== "string" || !/^apple-pickup-[a-f0-9]{32}$/.test(input.eventId) ||
+    typeof input.occurredAt !== "string" || input.occurredAt.length > 40 || !Number.isFinite(Date.parse(input.occurredAt))) {
+    throw new RequestError(400, "invalid_notification", "提醒事件标识或时间不合法");
+  }
+  return { eventId: input.eventId, occurredAt: input.occurredAt };
+}
+
 export async function onRequestPost(context: MakersContext): Promise<Response> {
   const denied = authorize(context);
   if (denied) return denied;
-  const barkValue = context.env.BARK_URL?.trim() ?? "";
-  if (!barkValue) {
-    return json({ error: "bark_not_configured", message: "服务端未配置 BARK_URL" }, 409);
-  }
 
   const seconds = retryAfter(`notify:${context.clientIp ?? "unknown"}`, 3_000);
   if (seconds > 0) {
@@ -30,10 +39,6 @@ export async function onRequestPost(context: MakersContext): Promise<Response> {
   }
 
   try {
-    const barkUrl = new URL(barkValue);
-    if (barkUrl.protocol !== "https:" && barkUrl.hostname !== "localhost") {
-      throw new RequestError(503, "invalid_bark_config", "BARK_URL 必须使用 HTTPS");
-    }
     const body = await readJsonBody(context.request, 8 * 1024);
     if (typeof body !== "object" || body === null || Array.isArray(body)) {
       throw new RequestError(400, "invalid_notification", "提醒格式不正确");
@@ -42,6 +47,7 @@ export async function onRequestPost(context: MakersContext): Promise<Response> {
     const title = shortText(input.title, "title", 80);
     const message = shortText(input.body, "body", 500);
     const targetUrl = shortText(input.url, "url", 300);
+    const identity = eventIdentity(input);
     const parsedTarget = new URL(targetUrl);
     const isAppleHost =
       parsedTarget.hostname === "apple.com" ||
@@ -51,29 +57,10 @@ export async function onRequestPost(context: MakersContext): Promise<Response> {
     if (parsedTarget.protocol !== "https:" || !isAppleHost) {
       throw new RequestError(400, "invalid_notification", "提醒链接必须是 Apple HTTPS 地址");
     }
-    await withResponse(barkUrl, {
-      method: "POST",
-      redirect: "error",
-      signal: context.request.signal,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        title,
-        body: message,
-        url: parsedTarget.toString(),
-        group: "apple-pickup-watcher",
-        level: "timeSensitive",
-      }),
-    }, 10_000, async (response, signal) => {
-      if (!response.ok) throw new RequestError(502, "bark_failed", `Bark 返回 HTTP ${response.status}`);
-      const raw = await readResponseText(response, 16 * 1024, signal);
-      let result: unknown;
-      try { result = JSON.parse(raw) as unknown; }
-      catch { throw new RequestError(502, "bark_failed", "Bark 未返回有效的推送确认"); }
-      if (!result || typeof result !== "object" || (result as Record<string, unknown>).code !== 200) {
-        throw new RequestError(502, "bark_failed", "Bark 未确认推送成功");
-      }
-    });
-    return json({ ok: true });
+    const provider = await sendNotification(context.env, {
+      title, body: message, url: parsedTarget, ...identity,
+    }, context.request.signal);
+    return json({ ok: true, provider });
   } catch (error) {
     return errorResponse(error);
   }

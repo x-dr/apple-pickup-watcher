@@ -59,7 +59,8 @@ async function requestJson<T>(path: string, token: string, init: RequestInit = {
 
 export async function fetchHealth(signal?: AbortSignal): Promise<HealthResponse> {
   const value = await requestJson<HealthResponse>("/api/health", "", { cache: "no-store", signal });
-  if (value.ok !== true || typeof value.authConfigured !== "boolean" || typeof value.barkConfigured !== "boolean") {
+  if (value.ok !== true || typeof value.authConfigured !== "boolean" ||
+    (value.notificationProvider !== null && value.notificationProvider !== "bark" && value.notificationProvider !== "notifyhub")) {
     throw new ApiError(502, "invalid_response", "服务状态响应不正确");
   }
   return value;
@@ -170,9 +171,22 @@ export async function checkTargets(targets: Target[], token: string, signal?: Ab
   };
 }
 
-export async function sendBark(input: { title: string; body: string; url: string }, token: string, signal?: AbortSignal): Promise<{ ok: true }> {
+interface NotificationRequest {
+  title: string;
+  body: string;
+  url: string;
+  eventId?: string;
+  occurredAt?: string;
+}
+
+export async function sendNotification(input: NotificationRequest, token: string, signal?: AbortSignal): Promise<{ ok: true }> {
+  const payload = {
+    ...input,
+    eventId: input.eventId ?? `apple-pickup-${crypto.randomUUID().replaceAll("-", "")}`,
+    occurredAt: input.occurredAt ?? new Date().toISOString(),
+  };
   const value = await requestJson<{ ok: true }>("/api/notify", token, {
-    method: "POST", body: JSON.stringify(input), signal,
+    method: "POST", body: JSON.stringify(payload), signal,
   });
   if (value.ok !== true) throw new ApiError(502, "invalid_response", "推送响应不正确");
   return value;

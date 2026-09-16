@@ -3,12 +3,12 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWatcher, type WatcherModel } from "../src/hooks/useWatcher";
-import { ApiError, checkTargets, fetchHealth, sendBark } from "../src/services/api";
+import { ApiError, checkTargets, fetchHealth, sendNotification } from "../src/services/api";
 import { showStockNotification } from "../src/services/notifications";
 import { targetKey, type Availability, type CheckResponse, type Target } from "../src/domain/types";
 
 vi.mock("../src/domain/catalog", () => ({ loadCatalog: vi.fn(async (locale: string) => ({ locale, generatedAt: "2026-09-15", sourceCommit: "test", stores: [], products: [] })) }));
-vi.mock("../src/services/api", async (original) => ({ ...await original<typeof import("../src/services/api")>(), checkTargets: vi.fn(), fetchHealth: vi.fn(), sendBark: vi.fn() }));
+vi.mock("../src/services/api", async (original) => ({ ...await original<typeof import("../src/services/api")>(), checkTargets: vi.fn(), fetchHealth: vi.fn(), sendNotification: vi.fn() }));
 vi.mock("../src/services/notifications", () => ({ ensureNotificationPermission: vi.fn(async () => "granted"), prepareAudio: vi.fn(async () => true), playAlertTone: vi.fn(async () => true), showStockNotification: vi.fn(() => true) }));
 
 const target = (partNumber = "AAA/A"): Target => ({ locale: "zh_CN", storeNumber: "R683", storeTitle: "测试门店", partNumber, productName: partNumber, productUrl: `https://www.apple.com.cn/shop/product/${partNumber}` });
@@ -35,9 +35,9 @@ beforeEach(async () => {
   vi.clearAllMocks();
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   localStorage.clear(); sessionStorage.clear();
-  localStorage.setItem("apw:web:settings:v1", JSON.stringify({ browserNotifications: true, soundEnabled: false, barkEnabled: true }));
-  vi.mocked(fetchHealth).mockResolvedValue({ ok: true, authConfigured: false, barkConfigured: true, runtime: "test" });
-  vi.mocked(sendBark).mockResolvedValue({ ok: true });
+  localStorage.setItem("apw:web:settings:v1", JSON.stringify({ browserNotifications: true, soundEnabled: false, notificationEnabled: true }));
+  vi.mocked(fetchHealth).mockResolvedValue({ ok: true, authConfigured: false, notificationProvider: "bark", runtime: "test" });
+  vi.mocked(sendNotification).mockResolvedValue({ ok: true });
   vi.mocked(checkTargets).mockImplementation(async (targets) => response(targets));
   await mount();
 });
@@ -62,7 +62,7 @@ describe("监控状态与通知", () => {
     await act(async () => { pending.resolve(response([target()])); await checking; });
     expect(model.rows.map((row) => row.target.partNumber)).toEqual(["BBB/A"]);
     expect(model.rows[0]?.availability).toMatchObject({ reason: "not_yet_checked" });
-    expect(sendBark).not.toHaveBeenCalled();
+    expect(sendNotification).not.toHaveBeenCalled();
     expect(JSON.parse(localStorage.getItem("apw:web:targets:v1")!)[0].partNumber).toBe("BBB/A");
   });
 
@@ -76,10 +76,12 @@ describe("监控状态与通知", () => {
     expect(model.rows.find((row) => row.target.partNumber === "BBB/A")?.availability.kind).toBe("in_stock");
   });
 
-  it("失败的 Bark 会重试，成功的浏览器通知不会跟着重复", async () => {
-    await add(); vi.mocked(sendBark).mockRejectedValueOnce(new Error("模拟推送失败"));
+  it("失败的服务端通知会重试，成功的浏览器通知不会跟着重复", async () => {
+    await add(); vi.mocked(sendNotification).mockRejectedValueOnce(new Error("模拟推送失败"));
     await check(); await check(); await check();
-    expect(sendBark).toHaveBeenCalledTimes(2);
+    expect(sendNotification).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(sendNotification).mock.calls[1]![0].eventId).toBe(vi.mocked(sendNotification).mock.calls[0]![0].eventId);
+    expect(vi.mocked(sendNotification).mock.calls[1]![0].occurredAt).toBe(vi.mocked(sendNotification).mock.calls[0]![0].occurredAt);
     expect(showStockNotification).toHaveBeenCalledTimes(1);
   });
 
@@ -87,10 +89,10 @@ describe("监控状态与通知", () => {
     await add(); await check();
     vi.mocked(checkTargets).mockImplementationOnce(async (targets) => response(targets, { kind: "unknown", reason: "transport", detail: "模拟故障" }));
     await check(); await check();
-    expect(sendBark).toHaveBeenCalledTimes(1);
+    expect(sendNotification).toHaveBeenCalledTimes(1);
     vi.mocked(checkTargets).mockImplementationOnce(async (targets) => response(targets, { kind: "out_of_stock" }));
     await check(); await check();
-    expect(sendBark).toHaveBeenCalledTimes(2);
+    expect(sendNotification).toHaveBeenCalledTimes(2);
   });
 
   it("API 失败标记本轮未知并保留上次确认库存", async () => {
@@ -115,7 +117,7 @@ describe("监控状态与通知", () => {
     await act(async () => { fresh.resolve(response([target()], { kind: "out_of_stock" })); });
     expect(model.rows[0]?.availability.kind).toBe("out_of_stock");
     expect(model.checking).toBe(false);
-    expect(sendBark).not.toHaveBeenCalled();
+    expect(sendNotification).not.toHaveBeenCalled();
   });
 
   it("从本轮完成后计时，慢请求不重叠，下一轮时间与实际触发一致", async () => {

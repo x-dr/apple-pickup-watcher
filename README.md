@@ -7,16 +7,16 @@ Apple 到店取货库存监控 Web 应用。前端使用 React 19、TypeScript�
 ## 一键部署到 EdgeOne Pages
 
 <p align="center">
-	<a href="https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fx-dr%2Fapple-pickup-watcher&env=BARK_URL%2CNOTIFYHUB_WEBHOOK_URL%2CNOTIFYHUB_TOKEN%2CAPW_ACCESS_TOKEN%2CAPW_IP_API_KEY">
+	<a href="https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fx-dr%2Fapple-pickup-watcher&env=APW_ACCESS_TOKEN%2CAPW_IP_API_KEY">
 		<img src="https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg" alt="使用 EdgeOne Pages 部署">
 	</a>
 </p>
 
-点击按钮后，授权 GitHub 并确认仓库与部署分支即可创建项目。部署向导会预填以下环境变量：
+点击按钮后，授权 GitHub 并确认仓库与部署分支即可创建项目。部署向导会预填两个必需的环境变量：
 
 - `APW_ACCESS_TOKEN` 为必填项，请设置至少 16 位的随机访问口令；浏览器通过它访问库存查询接口。
 - `APW_IP_API_KEY` 为必填项，填写 IP-API Pro Key，用于由服务端查询函数出口 IP,可以填`EEKS6bLi6D91G1p`。
-- 服务端通知可选 Bark 或 NotifyHub：填写 `BARK_URL`，或同时填写 `NOTIFYHUB_WEBHOOK_URL` 和 `NOTIFYHUB_TOKEN`。两种渠道只能选择一个，不要同时配置。
+- 服务端通知不是必需功能。如需启用，可在项目创建后填写 `BARK_URL`，或同时填写 `NOTIFYHUB_WEBHOOK_URL` 和 `NOTIFYHUB_TOKEN`。两种渠道只能选择一个，不要同时配置。
 - 不要在公网部署中配置 `APW_ALLOW_UNAUTHENTICATED=true`。部署完成后，使用生成的项目域名访问应用；构建和运行时配置已由 `edgeone.json` 提供。
 
 需要配置自动部署、预览环境或查看完整验证流程，请继续阅读[通过 Git 部署到 EdgeOne Makers](#通过-git-部署到-edgeone-makers)。
